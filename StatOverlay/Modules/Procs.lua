@@ -102,6 +102,11 @@ local COLOR_ACTIVE = { 0.4, 1, 0.4 }
 local COLOR_COOLDOWN = { 1, 0.5, 0.5 }
 local COLOR_READY = { 0.6, 0.6, 0.6 }
 
+-- Proc rows show the game's own spell tooltip on hover.
+local function TooltipProvider(spellID)
+    return { spellID = spellID }
+end
+
 local function BuildWatchedRow(spellID)
     local name = GetSpellName(spellID)
     if not name then
@@ -128,6 +133,7 @@ local function BuildWatchedRow(spellID)
             value = (aura.duration or 0) > 0 and ns.FormatTime(remaining) or "on",
             icon = icon,
             valueColor = COLOR_ACTIVE,
+            tooltipKey = spellID,
         }
     end
 
@@ -140,6 +146,7 @@ local function BuildWatchedRow(spellID)
             desaturate = true,
             valueColor = COLOR_COOLDOWN,
             alpha = 0.7,
+            tooltipKey = spellID,
         }
     end
 
@@ -152,6 +159,7 @@ local function BuildWatchedRow(spellID)
         desaturate = true,
         valueColor = COLOR_READY,
         alpha = 0.5,
+        tooltipKey = spellID,
     }
 end
 
@@ -188,11 +196,12 @@ function Procs:Update()
                 value = ns.FormatTime(remaining),
                 icon = proc.icon,
                 valueColor = COLOR_ACTIVE,
+                tooltipKey = proc.spellID,
             }
         end
     end
 
-    ns.UI:SetSection("procs", rows)
+    ns.UI:SetSection("procs", rows, TooltipProvider)
 end
 
 --------------------------------------------------------------------------------

@@ -53,7 +53,8 @@ Locking also lets mouse clicks pass through, so it will not get in the way in co
 | `/so width <120-320>` | Set the overlay width |
 | `/so font <8-20>` | Set the font size |
 | `/so stat` | List stat rows and whether each is shown |
-| `/so stat <name>` | Toggle a stat row, e.g. `/so stat haste` |
+| `/so stat <name>` | Toggle a stat row for this character, e.g. `/so stat haste` |
+| `/so tooltips` | Toggle hover tooltips |
 | `/so dps` | Print a summary of the last fight |
 | `/so watch <spellID>` | Track a spell's proc and cooldown |
 | `/so unwatch <spellID>` | Stop tracking a spell |
@@ -73,6 +74,23 @@ Item level, your spec's primary stat, and the secondary ratings. Crit follows yo
 spec: Intellect specs get the best spell-school crit, everyone else gets melee crit,
 matching what the character sheet reports. Stamina, health, leech, avoidance, speed,
 and armor are available but off by default — turn on whatever you care about.
+
+**Which stats show is per character**, so your tank can display armor and avoidance
+while your mage shows haste and mastery. If you used an earlier version where this
+was account-wide, your existing choice is copied onto each character the first time
+it logs in, so nothing resets underneath you.
+
+### Tooltips
+
+Hovering any row explains what it is and shows the numbers behind it — for a
+secondary stat, the combat rating you have and how much of the percentage that
+rating is buying you; for your primary stat, base versus what gear and buffs added;
+for versatility, both the damage done and the damage reduction halves. Proc rows
+show the game's own spell tooltip.
+
+Rows pass clicks through even while accepting hover, so tooltips do not cost you the
+click-through that makes a locked overlay unobtrusive. Turn them off with
+`/so tooltips` if you would rather the overlay ignore the mouse entirely.
 
 ### Combat
 
@@ -99,8 +117,13 @@ To find a spell ID, get the buff on you and run `/so scan`.
 
 ## Configuration storage
 
-- `StatOverlayDB` — display settings, shared across all characters.
-- `StatOverlayCharDB` — the watch list, per character, since procs are class-specific.
+- `StatOverlayDB` — display settings (scale, width, opacity, tooltips, section
+  toggles), shared across all characters.
+- `StatOverlayCharDB` — which stats are shown and the proc watch list, per
+  character, since both are class- and role-specific.
+
+`/so reset all` restores display settings and this character's stat rows. It leaves
+the watch list alone: that is curated data, not a setting.
 
 ## Development
 
@@ -122,7 +145,13 @@ StatOverlay/
 Modules are plain tables registered with `ns:NewModule(name)`. Core calls `OnInit`
 after saved variables load, `OnEnable` at `PLAYER_LOGIN`, and `OnConfigChanged`
 whenever settings change. Modules never touch frames — they hand the UI a list of
-rows via `ns.UI:SetSection(id, rows)` and the layout is rebuilt once per frame.
+rows via `ns.UI:SetSection(id, rows, tooltipProvider)` and the layout is rebuilt once
+per frame.
+
+Tooltips follow the same rule: a row carries a `tooltipKey`, and its section carries
+a provider that turns that key into displayable data. Nothing is built until the
+mouse is actually over a row, which matters because stats refresh on `UNIT_AURA` and
+that fires constantly in combat.
 
 ### Tests
 
@@ -130,7 +159,7 @@ There is a mock of the WoW API so the addon can be loaded and driven outside the
 game. It catches load-order mistakes, nil API calls, and combat-log parsing bugs:
 
 ```sh
-lua5.1 tests/run.lua      # 84 checks
+lua5.1 tests/run.lua      # 115 checks
 ```
 
 Syntax-check everything (WoW runs Lua 5.1):

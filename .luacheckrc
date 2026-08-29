@@ -24,15 +24,16 @@ read_globals = {
 
     -- Frames and widgets
     "CreateFrame", "UIParent", "GameFontNormal", "GameFontNormalSmall",
-    "GameFontHighlightSmall", "BackdropTemplateMixin",
+    "GameFontHighlightSmall", "BackdropTemplateMixin", "GameTooltip",
 
     -- Settings API helpers
     "CreateSettingsListSectionHeaderInitializer", "CreateSettingsButtonInitializer",
 
     -- Unit and character info
-    "UnitGUID", "UnitStat", "UnitArmor", "UnitHealthMax", "InCombatLockdown",
+    "UnitGUID", "UnitStat", "UnitArmor", "UnitHealth", "UnitHealthMax", "InCombatLockdown",
     "GetAverageItemLevel", "GetCritChance", "GetSpellCritChance", "GetRangedCritChance",
-    "GetHaste", "GetMasteryEffect", "GetCombatRatingBonus", "GetVersatilityBonus",
+    "GetHaste", "GetMasteryEffect", "GetMastery",
+    "GetCombatRating", "GetCombatRatingBonus", "GetVersatilityBonus",
     "GetLifesteal", "GetAvoidance", "GetSpeed",
     "GetSpecialization", "GetSpecializationInfo",
     "GetSpellInfo", "GetSpellCooldown", "GetAddOnMetadata",
@@ -42,7 +43,9 @@ read_globals = {
     "COMBATLOG_OBJECT_AFFILIATION_MINE",
     "COMBATLOG_OBJECT_TYPE_PET",
     "COMBATLOG_OBJECT_TYPE_GUARDIAN",
-    "CR_VERSATILITY_DAMAGE_DONE", "CR_LIFESTEAL", "CR_AVOIDANCE", "CR_SPEED",
+    "CR_VERSATILITY_DAMAGE_DONE", "CR_VERSATILITY_DAMAGE_TAKEN",
+    "CR_LIFESTEAL", "CR_AVOIDANCE", "CR_SPEED",
+    "CR_CRIT_MELEE", "CR_CRIT_SPELL", "CR_HASTE_MELEE", "CR_HASTE_SPELL", "CR_MASTERY",
 
     -- Misc
     "GetTime", "format", "strjoin", "tostringall", "bit",

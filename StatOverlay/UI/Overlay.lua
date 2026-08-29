@@ -63,9 +63,60 @@ end
 -- Row pooling
 --------------------------------------------------------------------------------
 
+--------------------------------------------------------------------------------
+-- Tooltips
+--
+-- Modules stay frame-free: a row carries a tooltipKey, and its section carries
+-- a provider that turns that key into displayable data on hover. Nothing is
+-- built until the mouse is actually over a row.
+--------------------------------------------------------------------------------
+
+local function ShowRowTooltip(row)
+    if not row.tooltipProvider or not row.tooltipKey then return end
+
+    local data = row.tooltipProvider(row.tooltipKey)
+    if not data then return end
+
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+
+    -- Spell rows get the real in-game spell tooltip.
+    if data.spellID then
+        GameTooltip:SetSpellByID(data.spellID)
+        GameTooltip:Show()
+        return
+    end
+
+    GameTooltip:ClearLines()
+    GameTooltip:AddDoubleLine(data.title or "", data.value or "", 1, 1, 1, 1, 0.82, 0)
+
+    for _, line in ipairs(data.lines or {}) do
+        GameTooltip:AddDoubleLine(line.left, line.right, 0.8, 0.8, 0.8, 1, 1, 1)
+    end
+
+    if data.description then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(data.description, 0.6, 0.8, 1, true)
+    end
+
+    GameTooltip:Show()
+end
+
+local function HideRowTooltip()
+    GameTooltip:Hide()
+end
+
 local function CreateRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     row:SetHeight(14)
+
+    row:SetScript("OnEnter", ShowRowTooltip)
+    row:SetScript("OnLeave", HideRowTooltip)
+
+    -- Let clicks fall through to whatever is underneath, so hover tooltips do
+    -- not cost the click-through that makes a locked overlay unobtrusive.
+    -- Guarded: these calls do not exist on every game version.
+    pcall(row.SetPropagateMouseClicks, row, true)
+    pcall(row.SetPropagateMouseMotion, row, false)
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(ICON_SIZE, ICON_SIZE)
@@ -96,10 +147,13 @@ end
 -- Public API
 --------------------------------------------------------------------------------
 
--- rows is an array of { label, value, icon, labelColor, valueColor, alpha }
-function UI:SetSection(id, rows)
+-- rows is an array of { label, value, icon, labelColor, valueColor, alpha,
+-- tooltipKey }. tooltipProvider is called as provider(tooltipKey) on hover and
+-- returns either { spellID } or { title, value, lines, description }.
+function UI:SetSection(id, rows, tooltipProvider)
     local section = GetSection(id)
     section.data = rows or {}
+    section.tooltipProvider = tooltipProvider
     layoutDirty = true
 end
 
@@ -157,6 +211,12 @@ local function LayoutSection(section, parent, yOffset, db)
         row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -PADDING, yOffset)
         row:SetHeight(rowHeight)
         row:SetAlpha(entry.alpha or 1)
+
+        -- A row only takes mouse input when it has something to say.
+        local hasTooltip = db.tooltips and entry.tooltipKey and section.tooltipProvider
+        row.tooltipKey = hasTooltip and entry.tooltipKey or nil
+        row.tooltipProvider = hasTooltip and section.tooltipProvider or nil
+        row:EnableMouse(hasTooltip and true or false)
 
         local labelInset = 0
         if entry.icon then

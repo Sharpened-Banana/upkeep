@@ -116,6 +116,8 @@ function CreateFrame(frameType, name, parent, template)
     function frame:SetClampedToScreen() end
     function frame:SetResizable() end
     function frame:EnableMouse(value) self.mouseEnabled = value end
+    function frame:SetPropagateMouseClicks(value) self.propagateClicks = value end
+    function frame:SetPropagateMouseMotion(value) self.propagateMotion = value end
     function frame:StartMoving() end
     function frame:StopMovingOrSizing() end
     function frame:SetScale(value) self.scale = value end
@@ -220,9 +222,15 @@ COMBATLOG_OBJECT_TYPE_PET = 0x00001000
 COMBATLOG_OBJECT_TYPE_GUARDIAN = 0x00002000
 
 CR_VERSATILITY_DAMAGE_DONE = 29
+CR_VERSATILITY_DAMAGE_TAKEN = 31
 CR_LIFESTEAL = 17
 CR_AVOIDANCE = 21
 CR_SPEED = 14
+CR_CRIT_MELEE = 9
+CR_CRIT_SPELL = 11
+CR_HASTE_MELEE = 18
+CR_HASTE_SPELL = 20
+CR_MASTERY = 26
 
 mock.combatLogPayload = {}
 
@@ -246,8 +254,9 @@ mock.auras = {}
 
 function InCombatLockdown() return mock.inCombat end
 function UnitGUID(unit) return unit == "player" and "Player-1234-ABCDEF" or "Pet-0-1234" end
-function UnitStat(_, index) return mock.stats[index], mock.stats[index], 0, 0 end
+function UnitStat(_, index) return mock.stats[index] - 200, mock.stats[index], 200, 0 end
 function UnitHealthMax() return 4250000 end
+function UnitHealth() return 3100000 end
 function UnitArmor() return 3000, 4500, 4500, 0, 0 end
 function GetAverageItemLevel() return 639.5, 636.2, 0 end
 function GetCritChance() return 21.34 end
@@ -256,7 +265,9 @@ function GetRangedCritChance() return 21.34 end
 function GetHaste() return 14.77 end
 function GetMasteryEffect() return 31.02 end
 function GetCombatRatingBonus() return 4.5 end
+function GetCombatRating(index) return 1000 + index end
 function GetVersatilityBonus() return 3.1 end
+function GetMastery() return 24.5 end
 function GetLifesteal() return 2.4 end
 function GetAvoidance() return 1.8 end
 function GetSpeed() return 0.9 end
@@ -327,6 +338,51 @@ end
 
 function mock.ClearAuras()
     mock.auras = {}
+end
+
+--------------------------------------------------------------------------------
+-- Tooltip
+--
+-- Records what was rendered so tests can assert on tooltip content.
+--------------------------------------------------------------------------------
+
+GameTooltip = {
+    lines = {},
+    shown = false,
+}
+
+function GameTooltip:SetOwner(owner, anchor)
+    self.owner, self.anchor = owner, anchor
+    self.lines = {}
+    self.spellID = nil
+end
+
+function GameTooltip:ClearLines() self.lines = {} end
+
+function GameTooltip:AddLine(text)
+    table.insert(self.lines, { left = text })
+end
+
+function GameTooltip:AddDoubleLine(left, right)
+    table.insert(self.lines, { left = left, right = right })
+end
+
+function GameTooltip:SetSpellByID(spellID)
+    self.spellID = spellID
+    local spell = mock.spells[spellID]
+    table.insert(self.lines, { left = spell and spell.name or ("Spell " .. spellID) })
+end
+
+function GameTooltip:Show() self.shown = true end
+function GameTooltip:Hide() self.shown = false end
+
+-- Returns the rendered tooltip as a flat list of "left=right" strings.
+function GameTooltip:Dump()
+    local out = {}
+    for _, line in ipairs(self.lines) do
+        out[#out + 1] = tostring(line.left) .. (line.right and ("=" .. tostring(line.right)) or "")
+    end
+    return out
 end
 
 --------------------------------------------------------------------------------

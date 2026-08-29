@@ -13,7 +13,8 @@ local HELP = {
     "  |cffffff00/so scale <0.5-2>|r - set overlay scale",
     "  |cffffff00/so width <120-320>|r - set overlay width",
     "  |cffffff00/so font <8-20>|r - set font size",
-    "  |cffffff00/so stat <name>|r - toggle a stat row (see |cffffff00/so stat|r)",
+    "  |cffffff00/so stat <name>|r - toggle a stat row for this character",
+    "  |cffffff00/so tooltips|r - toggle hover tooltips",
     "  |cffffff00/so dps|r - report the last fight",
     "  |cffffff00/so reset dps|r - clear combat totals",
     "  |cffffff00/so reset pos|r - move the overlay back to centre",
@@ -96,25 +97,33 @@ handlers.font = function(argument)
 end
 
 handlers.stat = function(argument)
+    local shown = ns.StatsShown()
+
     if not argument or argument == "" then
         local names = {}
         for _, entry in ipairs(ns.STAT_LIST) do
-            local state = ns.db.stats.show[entry.key] and "|cff44ff44on|r" or "|cff888888off|r"
+            local state = shown[entry.key] and "|cff44ff44on|r" or "|cff888888off|r"
             names[#names + 1] = format("%s (%s)", entry.key, state)
         end
-        ns.Print("stats: " .. table.concat(names, ", "))
+        ns.Print("stats for this character: " .. table.concat(names, ", "))
         return
     end
 
     local key = argument:lower()
-    if ns.db.stats.show[key] == nil then
+    if shown[key] == nil then
         ns.Print(format("unknown stat '%s'. Use /so stat to list them.", key))
         return
     end
 
-    ns.db.stats.show[key] = not ns.db.stats.show[key]
+    shown[key] = not shown[key]
     ns.RefreshAll()
-    ns.Print(format("%s %s.", key, ns.db.stats.show[key] and "shown" or "hidden"))
+    ns.Print(format("%s %s on this character.", key, shown[key] and "shown" or "hidden"))
+end
+
+handlers.tooltips = function()
+    ns.db.tooltips = not ns.db.tooltips
+    ns.RefreshAll()
+    ns.Print(format("tooltips %s.", ns.db.tooltips and "enabled" or "disabled"))
 end
 
 handlers.dps = function()

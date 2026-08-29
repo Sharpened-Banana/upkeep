@@ -76,7 +76,7 @@ local function BuildPanel()
     local statsTable = function() return ns.db.stats end
     local combatTable = function() return ns.db.combat end
     local procsTable = function() return ns.db.procs end
-    local showTable = function() return ns.db.stats.show end
+    local showTable = function() return ns.StatsShown() end
 
     ------------------------------------------------------------------ Display
     AddHeader(layout, "Display")
@@ -97,6 +97,13 @@ local function BuildPanel()
         local get, set = Accessors(db, "showHeaders")
         AddCheckbox(category, "SO_headers", "Show section headers",
             "Show the Stats / Combat / Procs labels.", get, set)
+    end
+
+    do
+        local get, set = Accessors(db, "tooltips")
+        AddCheckbox(category, "SO_tooltips", "Show tooltips on hover",
+            "Explain each stat and show the rating behind it when you hover a row. "
+            .. "Clicks still pass through to whatever is underneath.", get, set)
     end
 
     do
@@ -128,7 +135,7 @@ local function BuildPanel()
     end, "Move the overlay back to its default spot.")
 
     ------------------------------------------------------------------- Stats
-    AddHeader(layout, "Stats")
+    AddHeader(layout, "Stats (this character)")
 
     do
         local get, set = Accessors(statsTable, "enabled")
@@ -137,7 +144,8 @@ local function BuildPanel()
 
     for _, entry in ipairs(ns.STAT_LIST) do
         local get, set = Accessors(showTable, entry.key)
-        AddCheckbox(category, "SO_stat_" .. entry.key, entry.label, nil, get, set)
+        AddCheckbox(category, "SO_stat_" .. entry.key, entry.label,
+            "Shown on this character only.", get, set)
     end
 
     ------------------------------------------------------------------ Combat

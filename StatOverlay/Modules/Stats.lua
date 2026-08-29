@@ -12,6 +12,20 @@ local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.Get
 
 local STAT_STRENGTH, STAT_AGILITY, STAT_STAMINA, STAT_INTELLECT = 1, 2, 3, 4
 
+-- Combat rating indices, with numeric fallbacks in case a global is missing.
+local RATING = {
+    critMelee = CR_CRIT_MELEE or 9,
+    critSpell = CR_CRIT_SPELL or 11,
+    hasteMelee = CR_HASTE_MELEE or 18,
+    hasteSpell = CR_HASTE_SPELL or 20,
+    mastery = CR_MASTERY or 26,
+    versDone = CR_VERSATILITY_DAMAGE_DONE or 29,
+    versTaken = CR_VERSATILITY_DAMAGE_TAKEN or 31,
+    lifesteal = CR_LIFESTEAL or 17,
+    avoidance = CR_AVOIDANCE or 21,
+    speed = CR_SPEED or 14,
+}
+
 local STAT_NAMES = {
     [STAT_STRENGTH] = "Strength",
     [STAT_AGILITY] = "Agility",
@@ -139,32 +153,189 @@ readers.armor = function()
 end
 
 --------------------------------------------------------------------------------
+-- Tooltips
+--
+-- Built on hover rather than on every stat update, which fires often in combat.
+--------------------------------------------------------------------------------
+
+local function Rating(index)
+    return GetCombatRating and GetCombatRating(index) or 0
+end
+
+local function RatingLines(index, ratingLabel)
+    return {
+        { left = ratingLabel or "Rating", right = ns.FormatNumber(Rating(index)) },
+        { left = "From rating", right = ns.FormatPercent(GetCombatRatingBonus(index) or 0) },
+    }
+end
+
+local DESCRIPTIONS = {
+    ilvl = "The average item level of the gear you are wearing. Overall also counts items in your bags.",
+    primary = "Your specialisation's main stat. It increases the damage or healing of most of your abilities.",
+    stamina = "Each point of Stamina increases your maximum health.",
+    health = "The most damage you can take before dying.",
+    crit = "Chance for your attacks and spells to critically strike for extra damage or healing.",
+    haste = "Increases attack and casting speed, and the rate of many periodic effects and resource generation.",
+    mastery = "Improves a bonus specific to your specialisation.",
+    vers = "Increases damage and healing done, and reduces damage taken.",
+    leech = "Heals you for a portion of the damage and healing you deal.",
+    avoid = "Reduces damage taken from area-of-effect attacks.",
+    speed = "Increases your movement speed.",
+    armor = "Reduces the physical damage you take.",
+}
+
+local tooltipBuilders = {}
+
+tooltipBuilders.ilvl = function()
+    local overall, equipped = GetAverageItemLevel()
+    return {
+        lines = {
+            { left = "Equipped", right = format("%.1f", equipped or 0) },
+            { left = "Overall", right = format("%.1f", overall or 0) },
+        },
+    }
+end
+
+local function StatBreakdown(index)
+    local base, total, posBuff, negBuff = UnitStat("player", index)
+    local lines = {
+        { left = "Base", right = ns.FormatNumber(base) },
+    }
+    if (posBuff or 0) > 0 then
+        lines[#lines + 1] = { left = "From gear and buffs", right = "+" .. ns.FormatNumber(posBuff) }
+    end
+    if (negBuff or 0) < 0 then
+        lines[#lines + 1] = { left = "Reduced by", right = ns.FormatNumber(negBuff) }
+    end
+    return lines, total
+end
+
+tooltipBuilders.primary = function(primaryStat)
+    local lines = StatBreakdown(primaryStat)
+    return { lines = lines }
+end
+
+tooltipBuilders.stamina = function()
+    local lines = StatBreakdown(STAT_STAMINA)
+    lines[#lines + 1] = { left = "Maximum health", right = ns.FormatNumber(UnitHealthMax("player")) }
+    return { lines = lines }
+end
+
+tooltipBuilders.health = function()
+    return {
+        lines = {
+            { left = "Current", right = ns.FormatNumber(UnitHealth("player")) },
+            { left = "Maximum", right = ns.FormatNumber(UnitHealthMax("player")) },
+        },
+    }
+end
+
+tooltipBuilders.crit = function(primaryStat)
+    local index = (primaryStat == STAT_INTELLECT) and RATING.critSpell or RATING.critMelee
+    return { lines = RatingLines(index) }
+end
+
+tooltipBuilders.haste = function(primaryStat)
+    local index = (primaryStat == STAT_INTELLECT) and RATING.hasteSpell or RATING.hasteMelee
+    return { lines = RatingLines(index) }
+end
+
+tooltipBuilders.mastery = function()
+    local lines = RatingLines(RATING.mastery)
+    if GetMastery then
+        lines[#lines + 1] = { left = "Mastery points", right = format("%.2f", GetMastery() or 0) }
+    end
+    return { lines = lines }
+end
+
+tooltipBuilders.vers = function()
+    return {
+        lines = {
+            { left = "Rating", right = ns.FormatNumber(Rating(RATING.versDone)) },
+            { left = "Damage and healing done", right = ns.FormatPercent(GetVersatility()) },
+            { left = "Damage taken reduced by", right = ns.FormatPercent(
+                (GetCombatRatingBonus(RATING.versTaken) or 0) + (GetVersatilityBonus(RATING.versTaken) or 0)) },
+        },
+    }
+end
+
+tooltipBuilders.leech = function() return { lines = RatingLines(RATING.lifesteal) } end
+tooltipBuilders.avoid = function() return { lines = RatingLines(RATING.avoidance) } end
+tooltipBuilders.speed = function() return { lines = RatingLines(RATING.speed) } end
+
+tooltipBuilders.armor = function()
+    local base, effective, _, posBuff = UnitArmor("player")
+    local lines = {
+        { left = "Base", right = ns.FormatNumber(base) },
+        { left = "Effective", right = ns.FormatNumber(effective) },
+    }
+    if (posBuff or 0) > 0 then
+        lines[#lines + 1] = { left = "From buffs", right = "+" .. ns.FormatNumber(posBuff) }
+    end
+    return { lines = lines }
+end
+
+-- Called by the UI when the mouse enters a stat row.
+local function TooltipProvider(key)
+    local entry
+    for _, candidate in ipairs(ns.STAT_LIST) do
+        if candidate.key == key then
+            entry = candidate
+            break
+        end
+    end
+    if not entry then return nil end
+
+    local primaryStat = GetPrimaryStatIndex()
+    local reader = readers[key]
+    local label, value
+    if reader then
+        local ok, readLabel, readValue = pcall(reader, primaryStat)
+        if ok then
+            label, value = readLabel, readValue
+        end
+    end
+
+    local data = { title = label or entry.label, value = value, description = DESCRIPTIONS[key] }
+
+    local builder = tooltipBuilders[key]
+    if builder then
+        local ok, built = pcall(builder, primaryStat)
+        if ok and built then
+            data.lines = built.lines
+        end
+    end
+
+    return data
+end
+
+--------------------------------------------------------------------------------
 -- Module
 --------------------------------------------------------------------------------
 
 function Stats:Update()
-    local db = ns.db
-    if not db.stats.enabled then
+    if not ns.db.stats.enabled then
         ns.UI:SetSection("stats", nil)
         return
     end
 
+    local shown = ns.StatsShown()
     local primaryStat = GetPrimaryStatIndex()
     local rows = {}
 
     for _, entry in ipairs(ns.STAT_LIST) do
-        if db.stats.show[entry.key] then
+        if shown[entry.key] then
             local reader = readers[entry.key]
             if reader then
                 local ok, label, value = pcall(reader, primaryStat)
                 if ok then
-                    rows[#rows + 1] = { label = label, value = value }
+                    rows[#rows + 1] = { label = label, value = value, tooltipKey = entry.key }
                 end
             end
         end
     end
 
-    ns.UI:SetSection("stats", rows)
+    ns.UI:SetSection("stats", rows, TooltipProvider)
 end
 
 function Stats:OnEnable()

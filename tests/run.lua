@@ -56,9 +56,9 @@ _G.print = realPrint
 -- Record every section the modules render, without touching production code.
 local rendered = {}
 local realSetSection = ns.UI.SetSection
-ns.UI.SetSection = function(self, id, rows)
+ns.UI.SetSection = function(self, id, rows, tooltipProvider)
     rendered[id] = rows or {}
-    return realSetSection(self, id, rows)
+    return realSetSection(self, id, rows, tooltipProvider)
 end
 
 local function findRow(sectionID, labelPattern)
@@ -89,9 +89,9 @@ check(SlashCmdList.STATOVERLAY ~= nil, "slash command registered")
 
 -- Defaults must not be shared by reference, or one character's settings would
 -- leak into another's.
-ns.db.stats.show.crit = false
-check(ns.DEFAULTS.stats.show.crit == true, "defaults are deep-copied, not referenced")
-ns.db.stats.show.crit = true
+ns.chardb.statsShow.crit = false
+check(ns.DEFAULTS.stats.enabled == true, "defaults are deep-copied, not referenced")
+ns.chardb.statsShow.crit = true
 
 mock.Fire("PLAYER_LOGIN")
 check(ns.playerGUID == "Player-1234-ABCDEF", "player GUID cached on login")
@@ -111,11 +111,11 @@ check(primaryRow and primaryRow.value == "8500", "primary stat shown exactly bel
 
 local healthRowBefore = findRow("stats", "Health")
 check(healthRowBefore == nil, "health row off by default")
-ns.db.stats.show.health = true
+ns.chardb.statsShow.health = true
 ns.RefreshAll()
 local healthRow = findRow("stats", "Health")
 check(healthRow and healthRow.value == "4.25M", "large numbers abbreviated", healthRow and healthRow.value)
-ns.db.stats.show.health = false
+ns.chardb.statsShow.health = false
 ns.RefreshAll()
 
 local critRow = findRow("stats", "Crit")
@@ -126,9 +126,11 @@ check(versRow ~= nil and versRow.value == "7.60%", "versatility sums rating bonu
 
 check(findRow("stats", "Stamina") == nil, "stats disabled by default are not drawn")
 
-ns.db.stats.show.stamina = true
+ns.chardb.statsShow.stamina = true
 ns.RefreshAll()
 check(findRow("stats", "Stamina") ~= nil, "enabling a stat adds its row")
+ns.chardb.statsShow.stamina = false
+ns.RefreshAll()
 
 --------------------------------------------------------------------------------
 section("Combat module")
@@ -269,6 +271,123 @@ local badWatch, reason = ns:GetModule("Procs"):Watch(999999)
 check(not badWatch, "watching an unknown spell ID is rejected", reason)
 
 --------------------------------------------------------------------------------
+section("Per-character stat visibility")
+--------------------------------------------------------------------------------
+
+check(ns.StatsShown() == ns.chardb.statsShow, "stat visibility reads from the character DB")
+check(ns.db.stats.show == nil, "stat visibility no longer lives in the shared DB")
+
+-- Toggling on this character must not touch the account-wide table.
+ns.StatsShown().armor = true
+ns.RefreshAll()
+check(findRow("stats", "Armor") ~= nil, "enabling armor on this character shows it")
+check(ns.db.stats.show == nil, "toggling did not write back to the shared DB")
+ns.StatsShown().armor = false
+ns.RefreshAll()
+
+-- A second character starts from its own defaults, not the first one's choices.
+local firstCharacter = StatOverlayCharDB
+ns.StatsShown().speed = true
+StatOverlayCharDB = nil
+ns.InitConfig()
+check(ns.chardb ~= firstCharacter, "a new character gets a fresh character DB")
+check(ns.chardb.statsShow.speed == false, "second character does not inherit the first character's choices",
+    ns.chardb.statsShow.speed)
+check(firstCharacter.statsShow.speed == true, "first character keeps its own choice")
+
+-- An upgrade from the account-wide layout carries the old choice across once.
+StatOverlayDB.stats.show = { crit = false, armor = true, haste = false }
+StatOverlayCharDB = nil
+ns.InitConfig()
+check(ns.chardb.statsShow.crit == false, "legacy account-wide choice migrated (crit off)", ns.chardb.statsShow.crit)
+check(ns.chardb.statsShow.armor == true, "legacy account-wide choice migrated (armor on)", ns.chardb.statsShow.armor)
+check(ns.chardb.migratedStatVisibility == true, "migration is marked done")
+
+-- Migration must not run twice and undo later changes.
+ns.chardb.statsShow.crit = true
+ns.InitConfig()
+check(ns.chardb.statsShow.crit == true, "migration does not re-run over later changes")
+
+StatOverlayDB.stats.show = nil
+StatOverlayCharDB = firstCharacter
+ns.InitConfig()
+ns.RefreshAll()
+
+--------------------------------------------------------------------------------
+section("Tooltips")
+--------------------------------------------------------------------------------
+
+-- Find the live row frames so hover can be simulated the way the client does.
+local function rowFrameFor(key)
+    for _, frame in ipairs(mock.frames) do
+        if frame.tooltipKey == key then return frame end
+    end
+    return nil
+end
+
+ns.db.tooltips = true
+ns.RefreshAll()
+ns.UI:Relayout()
+
+local critFrame = rowFrameFor("crit")
+check(critFrame ~= nil, "stat rows carry a tooltip key")
+check(critFrame and critFrame.mouseEnabled == true, "tooltip rows accept mouse input")
+check(critFrame and critFrame.propagateClicks == true, "clicks still pass through for click-through locking")
+
+critFrame.scripts.OnEnter(critFrame)
+local dump = table.concat(GameTooltip:Dump(), " | ")
+check(GameTooltip.shown, "hovering a stat shows a tooltip")
+check(dump:find("Crit=21.34%%") ~= nil, "tooltip headline shows the stat and its value", dump)
+check(dump:find("Rating=1009") ~= nil, "tooltip shows the underlying combat rating", dump)
+check(dump:find("From rating=4.50%%") ~= nil, "tooltip shows what the rating converts to", dump)
+check(dump:find("critically strike") ~= nil, "tooltip explains what the stat does", dump)
+
+critFrame.scripts.OnLeave(critFrame)
+check(not GameTooltip.shown, "leaving the row hides the tooltip")
+
+-- Versatility reports both halves of what it does.
+local versFrame = rowFrameFor("vers")
+versFrame.scripts.OnEnter(versFrame)
+dump = table.concat(GameTooltip:Dump(), " | ")
+check(dump:find("Damage and healing done") ~= nil, "versatility tooltip covers damage done", dump)
+check(dump:find("Damage taken reduced by") ~= nil, "versatility tooltip covers damage reduction", dump)
+
+-- Primary stat breaks down base versus buffs.
+local primaryFrame = rowFrameFor("primary")
+primaryFrame.scripts.OnEnter(primaryFrame)
+dump = table.concat(GameTooltip:Dump(), " | ")
+check(dump:find("Base=8300") ~= nil, "primary tooltip shows base value", dump)
+check(dump:find("From gear and buffs=%+200") ~= nil, "primary tooltip shows the buffed portion", dump)
+
+-- Item level distinguishes equipped from overall.
+local ilvlFrame = rowFrameFor("ilvl")
+ilvlFrame.scripts.OnEnter(ilvlFrame)
+dump = table.concat(GameTooltip:Dump(), " | ")
+check(dump:find("Equipped=636.2") ~= nil, "item level tooltip shows equipped", dump)
+check(dump:find("Overall=639.5") ~= nil, "item level tooltip shows overall", dump)
+
+-- Proc rows defer to the game's own spell tooltip.
+ns:GetModule("Procs"):Watch(190319)
+ns.RefreshAll()
+ns.UI:Relayout()
+local procFrame = rowFrameFor(190319)
+check(procFrame ~= nil, "proc rows carry the spell ID as their tooltip key")
+procFrame.scripts.OnEnter(procFrame)
+check(GameTooltip.spellID == 190319, "proc tooltip uses the real spell tooltip", GameTooltip.spellID)
+ns:GetModule("Procs"):Unwatch(190319)
+
+-- Disabling tooltips releases the mouse entirely.
+ns.db.tooltips = false
+ns.RefreshAll()
+ns.UI:Relayout()
+critFrame = rowFrameFor("crit")
+check(critFrame == nil, "disabling tooltips clears tooltip keys from rows")
+
+ns.db.tooltips = true
+ns.RefreshAll()
+ns.UI:Relayout()
+
+--------------------------------------------------------------------------------
 section("Layout")
 --------------------------------------------------------------------------------
 
@@ -341,7 +460,7 @@ end
 local commands = {
     "", "", "help", "lock", "unlock", "config", "scan", "dps",
     "scale 1.5", "width 240", "font 14", "stat", "stat crit",
-    "watch", "watch 190319", "watch list", "unwatch 190319",
+    "watch", "watch 190319", "watch list", "unwatch 190319", "tooltips", "tooltips",
     "reset dps", "reset pos", "nonsense", "scale bogus", "watch bogus",
 }
 
