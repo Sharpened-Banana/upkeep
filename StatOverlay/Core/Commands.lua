@@ -15,6 +15,9 @@ local HELP = {
     "  |cffffff00/so font <8-20>|r - set font size",
     "  |cffffff00/so stat <name>|r - toggle a stat row for this character",
     "  |cffffff00/so tooltips|r - toggle hover tooltips",
+    "  |cffffff00/so pin [stat]|r - keep a tooltip on screen (hovered one if no stat given)",
+    "  |cffffff00/so unpin [stat|all]|r - close pinned tooltips",
+    "  |cffffff00/so pins|r - list what is pinned",
     "  |cffffff00/so dps|r - report the last fight",
     "  |cffffff00/so reset dps|r - clear combat totals",
     "  |cffffff00/so reset pos|r - move the overlay back to centre",
@@ -118,6 +121,51 @@ handlers.stat = function(argument)
     shown[key] = not shown[key]
     ns.RefreshAll()
     ns.Print(format("%s %s on this character.", key, shown[key] and "shown" or "hidden"))
+end
+
+handlers.pin = function(argument)
+    if not argument or argument == "" then
+        local ok, result = ns.Tooltips:PinHovered()
+        ns.Print(ok and format("pinned %s.", result) or format("could not pin: %s.", result))
+        return
+    end
+
+    -- Pin by name so a stat can be pinned without hovering it.
+    local key = argument:lower()
+    if ns.StatsShown()[key] ~= nil then
+        local ok, result = ns.Tooltips:Pin("stats", key)
+        ns.Print(ok and format("pinned %s.", key) or format("could not pin %s: %s.", key, result))
+        return
+    end
+
+    local spellID = tonumber(argument)
+    if spellID then
+        local ok, result = ns.Tooltips:Pin("procs", spellID)
+        ns.Print(ok and format("pinned spell %d.", spellID) or format("could not pin: %s.", result))
+        return
+    end
+
+    ns.Print(format("unknown stat '%s'. Use /so stat to list them.", key))
+end
+
+handlers.unpin = function(argument)
+    argument = (argument or ""):lower()
+
+    if argument == "" or argument == "all" then
+        local removed = ns.Tooltips:UnpinAll()
+        ns.Print(format("closed %d pinned tooltip%s.", removed, removed == 1 and "" or "s"))
+        return
+    end
+
+    if ns.Tooltips:Unpin("stats:" .. argument) or ns.Tooltips:Unpin("procs:" .. argument) then
+        ns.Print(format("unpinned %s.", argument))
+    else
+        ns.Print(format("%s is not pinned.", argument))
+    end
+end
+
+handlers.pins = function()
+    PrintLines(ns.Tooltips:ListPinned(), "nothing pinned.")
 end
 
 handlers.tooltips = function()

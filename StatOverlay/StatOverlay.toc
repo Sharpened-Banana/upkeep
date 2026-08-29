@@ -11,8 +11,10 @@
 Core\Init.lua
 Core\Config.lua
 UI\Overlay.lua
+UI\Tooltips.lua
 Modules\Stats.lua
 Modules\Combat.lua
 Modules\Procs.lua
 Core\Options.lua
 Core\Commands.lua
+Bindings.xml

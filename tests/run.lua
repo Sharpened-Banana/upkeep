@@ -35,6 +35,7 @@ local FILES = {
     "Core\\Init.lua",
     "Core\\Config.lua",
     "UI\\Overlay.lua",
+    "UI\\Tooltips.lua",
     "Modules\\Stats.lua",
     "Modules\\Combat.lua",
     "Modules\\Procs.lua",
@@ -329,40 +330,59 @@ ns.db.tooltips = true
 ns.RefreshAll()
 ns.UI:Relayout()
 
+local hoverTip = StatOverlayHoverTooltip
+check(hoverTip ~= nil, "addon owns a hover tooltip frame rather than reusing GameTooltip")
+
+local function dumpOf(frame)
+    return table.concat(frame:Dump(), " | ")
+end
+
 local critFrame = rowFrameFor("crit")
 check(critFrame ~= nil, "stat rows carry a tooltip key")
 check(critFrame and critFrame.mouseEnabled == true, "tooltip rows accept mouse input")
 check(critFrame and critFrame.propagateClicks == true, "clicks still pass through for click-through locking")
 
 critFrame.scripts.OnEnter(critFrame)
-local dump = table.concat(GameTooltip:Dump(), " | ")
-check(GameTooltip.shown, "hovering a stat shows a tooltip")
+local dump = dumpOf(hoverTip)
+check(hoverTip.shown, "hovering a stat shows a tooltip")
 check(dump:find("Crit=21.34%%") ~= nil, "tooltip headline shows the stat and its value", dump)
 check(dump:find("Rating=1009") ~= nil, "tooltip shows the underlying combat rating", dump)
 check(dump:find("From rating=4.50%%") ~= nil, "tooltip shows what the rating converts to", dump)
 check(dump:find("critically strike") ~= nil, "tooltip explains what the stat does", dump)
+check(dump:find("Click to keep this on screen") ~= nil, "hover tooltip explains how to pin it", dump)
 
+-- Leaving the row must not hide instantly, or the mouse could never reach the
+-- tooltip to click it.
 critFrame.scripts.OnLeave(critFrame)
-check(not GameTooltip.shown, "leaving the row hides the tooltip")
+check(hoverTip.shown, "tooltip survives leaving the row long enough to be reached")
+mock.RunAfter()
+check(not hoverTip.shown, "tooltip hides once the grace period expires")
+
+-- Moving into the tooltip cancels the pending hide.
+critFrame.scripts.OnEnter(critFrame)
+critFrame.scripts.OnLeave(critFrame)
+hoverTip.scripts.OnEnter(hoverTip)
+mock.RunAfter()
+check(hoverTip.shown, "entering the tooltip cancels the scheduled hide")
 
 -- Versatility reports both halves of what it does.
 local versFrame = rowFrameFor("vers")
 versFrame.scripts.OnEnter(versFrame)
-dump = table.concat(GameTooltip:Dump(), " | ")
+dump = dumpOf(hoverTip)
 check(dump:find("Damage and healing done") ~= nil, "versatility tooltip covers damage done", dump)
 check(dump:find("Damage taken reduced by") ~= nil, "versatility tooltip covers damage reduction", dump)
 
 -- Primary stat breaks down base versus buffs.
 local primaryFrame = rowFrameFor("primary")
 primaryFrame.scripts.OnEnter(primaryFrame)
-dump = table.concat(GameTooltip:Dump(), " | ")
+dump = dumpOf(hoverTip)
 check(dump:find("Base=8300") ~= nil, "primary tooltip shows base value", dump)
 check(dump:find("From gear and buffs=%+200") ~= nil, "primary tooltip shows the buffed portion", dump)
 
 -- Item level distinguishes equipped from overall.
 local ilvlFrame = rowFrameFor("ilvl")
 ilvlFrame.scripts.OnEnter(ilvlFrame)
-dump = table.concat(GameTooltip:Dump(), " | ")
+dump = dumpOf(hoverTip)
 check(dump:find("Equipped=636.2") ~= nil, "item level tooltip shows equipped", dump)
 check(dump:find("Overall=639.5") ~= nil, "item level tooltip shows overall", dump)
 
@@ -373,8 +393,109 @@ ns.UI:Relayout()
 local procFrame = rowFrameFor(190319)
 check(procFrame ~= nil, "proc rows carry the spell ID as their tooltip key")
 procFrame.scripts.OnEnter(procFrame)
-check(GameTooltip.spellID == 190319, "proc tooltip uses the real spell tooltip", GameTooltip.spellID)
+check(hoverTip.spellID == 190319, "proc tooltip uses the real spell tooltip", hoverTip.spellID)
 ns:GetModule("Procs"):Unwatch(190319)
+
+--------------------------------------------------------------------------------
+section("Pinned tooltips")
+--------------------------------------------------------------------------------
+
+local Tooltips = ns.Tooltips
+Tooltips:UnpinAll()
+
+-- Clicking the hover tooltip pins whatever is under the cursor.
+local armorFrame = rowFrameFor("armor")
+check(armorFrame == nil, "armor row hidden by default")
+ns.StatsShown().armor = true
+ns.RefreshAll()
+ns.UI:Relayout()
+armorFrame = rowFrameFor("armor")
+check(armorFrame ~= nil, "armor row present once enabled")
+
+armorFrame.scripts.OnEnter(armorFrame)
+hoverTip.scripts.OnMouseDown(hoverTip)
+check(Tooltips:IsPinned("stats", "armor"), "clicking the hover tooltip pins it")
+check(not hoverTip.shown, "hover tooltip closes once pinned")
+
+local pinned = _G.StatOverlayPinnedTooltip1
+check(pinned ~= nil and pinned.shown, "a pinned tooltip frame is shown")
+dump = dumpOf(pinned)
+check(dump:find("Armor=") ~= nil, "pinned tooltip shows the stat", dump)
+check(dump:find("physical damage") ~= nil, "pinned tooltip keeps the explanation", dump)
+check(dump:find("Click to keep this on screen") == nil, "pinned tooltip drops the pin hint", dump)
+
+-- Pinned content refreshes on its own so the numbers stay live. Change the
+-- underlying value and the pin must pick it up without being re-opened.
+check(dumpOf(pinned):find("Effective=4500") ~= nil, "pinned tooltip starts with the current armor")
+mock.armor.effective = 7777
+mock.RunTickers()
+check(dumpOf(pinned):find("Effective=7777") ~= nil, "pinned tooltip refreshes from its provider",
+    dumpOf(pinned))
+mock.armor.effective = 4500
+
+-- Hovering an already-pinned row should not double up.
+armorFrame.scripts.OnEnter(armorFrame)
+check(not hoverTip.shown, "hovering an already-pinned row does not reopen the hover tooltip")
+
+-- Pinning the same thing twice is rejected.
+local okDup, reasonDup = Tooltips:Pin("stats", "armor")
+check(not okDup, "pinning the same row twice is rejected", reasonDup)
+
+-- A second pin stacks below the first rather than covering it.
+local okSecond = Tooltips:Pin("stats", "crit")
+check(okSecond, "a second row can be pinned")
+check(#Tooltips:ListPinned() == 2, "two pins tracked", #Tooltips:ListPinned())
+
+-- Pins survive a reload: they are saved and restored by key.
+check(ns.db.pinnedTooltips["stats:armor"] ~= nil, "pin saved to the database")
+local savedPins = ns.db.pinnedTooltips
+Tooltips:UnpinAll()
+check(#Tooltips:ListPinned() == 0, "unpin all clears every pin")
+check(next(savedPins) == nil, "unpinning clears the saved entries too")
+
+ns.db.pinnedTooltips["stats:crit"] = { section = "stats", key = "crit" }
+Tooltips:RestoreSaved()
+check(Tooltips:IsPinned("stats", "crit"), "saved pins are restored")
+
+-- Closing via the frame's own close button works.
+local critPin
+for _, frame in ipairs(mock.frames) do
+    if frame.pinID == "stats:crit" then critPin = frame end
+end
+check(critPin ~= nil, "pinned frame carries its id")
+critPin.closeButton.scripts.OnClick()
+check(not Tooltips:IsPinned("stats", "crit"), "close button unpins")
+
+-- Right-clicking a pin closes it; left-clicking does not.
+Tooltips:Pin("stats", "crit")
+critPin = nil
+for _, frame in ipairs(mock.frames) do
+    if frame.pinID == "stats:crit" then critPin = frame end
+end
+critPin.scripts.OnMouseUp(critPin, "LeftButton")
+check(Tooltips:IsPinned("stats", "crit"), "left-clicking a pin does not close it")
+critPin.scripts.OnMouseUp(critPin, "RightButton")
+check(not Tooltips:IsPinned("stats", "crit"), "right-clicking a pin closes it")
+
+-- Pinning with nothing hovered reports why rather than erroring.
+Tooltips:HideHover()
+local okNone, reasonNone = Tooltips:PinHovered()
+check(not okNone, "pinning with nothing hovered is rejected", reasonNone)
+
+-- The key binding entry point is defined and safe to call.
+check(type(StatOverlay_PinHoveredTooltip) == "function", "binding handler is a global function")
+check(pcall(StatOverlay_PinHoveredTooltip), "binding handler runs without a hovered row")
+check(BINDING_NAME_STATOVERLAY_PIN_TOOLTIP ~= nil, "binding has a display name")
+
+-- Resetting config must not leave orphaned pins on screen.
+Tooltips:Pin("stats", "armor")
+ns.ResetConfig()
+check(#Tooltips:ListPinned() == 0, "reset all closes pinned tooltips")
+
+ns.StatsShown().armor = false
+ns.db.tooltips = true
+ns.RefreshAll()
+ns.UI:Relayout()
 
 -- Disabling tooltips releases the mouse entirely.
 ns.db.tooltips = false
@@ -461,6 +582,7 @@ local commands = {
     "", "", "help", "lock", "unlock", "config", "scan", "dps",
     "scale 1.5", "width 240", "font 14", "stat", "stat crit",
     "watch", "watch 190319", "watch list", "unwatch 190319", "tooltips", "tooltips",
+    "pin", "pin crit", "pin crit", "pins", "unpin crit", "unpin all", "pin bogus",
     "reset dps", "reset pos", "nonsense", "scale bogus", "watch bogus",
 }
 

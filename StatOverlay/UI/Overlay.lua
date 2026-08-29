@@ -64,45 +64,23 @@ end
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
--- Tooltips
+-- Tooltip hand-off
 --
 -- Modules stay frame-free: a row carries a tooltipKey, and its section carries
--- a provider that turns that key into displayable data on hover. Nothing is
--- built until the mouse is actually over a row.
+-- a provider that turns that key into displayable data on hover. Rendering and
+-- pinning live in UI/Tooltips.lua; rows only report enter and leave.
 --------------------------------------------------------------------------------
 
 local function ShowRowTooltip(row)
-    if not row.tooltipProvider or not row.tooltipKey then return end
-
-    local data = row.tooltipProvider(row.tooltipKey)
-    if not data then return end
-
-    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-
-    -- Spell rows get the real in-game spell tooltip.
-    if data.spellID then
-        GameTooltip:SetSpellByID(data.spellID)
-        GameTooltip:Show()
-        return
+    if ns.Tooltips then
+        ns.Tooltips:OnRowEnter(row)
     end
-
-    GameTooltip:ClearLines()
-    GameTooltip:AddDoubleLine(data.title or "", data.value or "", 1, 1, 1, 1, 0.82, 0)
-
-    for _, line in ipairs(data.lines or {}) do
-        GameTooltip:AddDoubleLine(line.left, line.right, 0.8, 0.8, 0.8, 1, 1, 1)
-    end
-
-    if data.description then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(data.description, 0.6, 0.8, 1, true)
-    end
-
-    GameTooltip:Show()
 end
 
-local function HideRowTooltip()
-    GameTooltip:Hide()
+local function HideRowTooltip(row)
+    if ns.Tooltips then
+        ns.Tooltips:OnRowLeave(row)
+    end
 end
 
 local function CreateRow(parent)
@@ -161,6 +139,13 @@ function UI:MarkDirty()
     layoutDirty = true
 end
 
+-- Pinned tooltips outlive the row they were opened from, so they look their
+-- provider up by section rather than holding onto a recycled row frame.
+function UI:GetSectionProvider(id)
+    local section = sections[id]
+    return section and section.tooltipProvider
+end
+
 --------------------------------------------------------------------------------
 -- Layout
 --------------------------------------------------------------------------------
@@ -216,6 +201,7 @@ local function LayoutSection(section, parent, yOffset, db)
         local hasTooltip = db.tooltips and entry.tooltipKey and section.tooltipProvider
         row.tooltipKey = hasTooltip and entry.tooltipKey or nil
         row.tooltipProvider = hasTooltip and section.tooltipProvider or nil
+        row.sectionID = section.id
         row:EnableMouse(hasTooltip and true or false)
 
         local labelInset = 0

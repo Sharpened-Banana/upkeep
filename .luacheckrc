@@ -14,6 +14,9 @@ globals = {
     "SLASH_STATOVERLAY1",
     "SLASH_STATOVERLAY2",
     "SlashCmdList",
+    "StatOverlay_PinHoveredTooltip",
+    "BINDING_HEADER_STATOVERLAY",
+    "BINDING_NAME_STATOVERLAY_PIN_TOOLTIP",
 }
 
 -- Everything the client provides, read-only from our point of view.

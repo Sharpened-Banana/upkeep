@@ -55,6 +55,9 @@ Locking also lets mouse clicks pass through, so it will not get in the way in co
 | `/so stat` | List stat rows and whether each is shown |
 | `/so stat <name>` | Toggle a stat row for this character, e.g. `/so stat haste` |
 | `/so tooltips` | Toggle hover tooltips |
+| `/so pin [stat]` | Keep a tooltip on screen (the hovered one if no stat given) |
+| `/so unpin [stat\|all]` | Close pinned tooltips |
+| `/so pins` | List what is pinned |
 | `/so dps` | Print a summary of the last fight |
 | `/so watch <spellID>` | Track a spell's proc and cooldown |
 | `/so unwatch <spellID>` | Stop tracking a spell |
@@ -91,6 +94,24 @@ show the game's own spell tooltip.
 Rows pass clicks through even while accepting hover, so tooltips do not cost you the
 click-through that makes a locked overlay unobtrusive. Turn them off with
 `/so tooltips` if you would rather the overlay ignore the mouse entirely.
+
+### Pinning a tooltip
+
+Any tooltip can be made to stick. Hover a row, then either **click the tooltip** or
+press the **Pin hovered tooltip** key (bind it under Options → Key Bindings →
+StatOverlay). `/so pin armor` pins one without hovering at all.
+
+A pinned tooltip:
+
+- stays on screen and **keeps updating**, so a pinned Armor tooltip tracks your
+  damage reduction live as buffs come and go;
+- stacks down the right-hand side of the overlay, and can be **dragged** anywhere —
+  once dragged it keeps that spot;
+- closes on **right-click**, via its **close button**, or with `/so unpin`;
+- is **remembered between sessions**, along with where you put it.
+
+Pins are stored per account in `StatOverlayDB.pinnedTooltips`, keyed by
+`section:stat`. `/so reset all` closes them.
 
 ### Combat
 
@@ -153,13 +174,19 @@ a provider that turns that key into displayable data. Nothing is built until the
 mouse is actually over a row, which matters because stats refresh on `UNIT_AURA` and
 that fires constantly in combat.
 
+The shared `GameTooltip` is deliberately not used. Everything in the UI reuses it, so
+the next hover anywhere would wipe a pinned tooltip; the hover tooltip and every pin
+are the addon's own `GameTooltipTemplate` frames. Pins look their provider up by
+section rather than holding a row reference, because rows are pooled and recycled
+while a pin outlives them.
+
 ### Tests
 
 There is a mock of the WoW API so the addon can be loaded and driven outside the
 game. It catches load-order mistakes, nil API calls, and combat-log parsing bugs:
 
 ```sh
-lua5.1 tests/run.lua      # 115 checks
+lua5.1 tests/run.lua      # 153 checks
 ```
 
 Syntax-check everything (WoW runs Lua 5.1):

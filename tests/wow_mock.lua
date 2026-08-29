@@ -128,6 +128,30 @@ function CreateFrame(frameType, name, parent, template)
     function frame:SetFrameStrata() end
     function frame:SetFrameLevel() end
 
+    -- Tooltip surface, for frames created from GameTooltipTemplate.
+    frame.lines = {}
+    function frame:SetOwner(owner, anchor)
+        self.owner, self.anchor = owner, anchor
+        self.lines = {}
+        self.spellID = nil
+    end
+    function frame:ClearLines() self.lines = {}; self.spellID = nil end
+    function frame:AddLine(text) table.insert(self.lines, { left = text }) end
+    function frame:AddDoubleLine(left, right) table.insert(self.lines, { left = left, right = right }) end
+    function frame:SetSpellByID(spellID)
+        self.spellID = spellID
+        local spell = mock.spells[spellID]
+        table.insert(self.lines, { left = spell and spell.name or ("Spell " .. spellID) })
+    end
+    function frame:NumLines() return #self.lines end
+    function frame:Dump()
+        local out = {}
+        for _, line in ipairs(self.lines) do
+            out[#out + 1] = tostring(line.left) .. (line.right and ("=" .. tostring(line.right)) or "")
+        end
+        return out
+    end
+
     function frame:CreateFontString()
         local fs = NewFontString()
         table.insert(self.children, fs)
@@ -204,8 +228,21 @@ C_Timer = {
         table.insert(mock.tickers, ticker)
         return ticker
     end,
-    After = function(_, callback) callback() end,
+    After = function(delay, callback)
+        table.insert(mock.pending, { delay = delay, callback = callback })
+    end,
 }
+
+mock.pending = {}
+
+-- Runs every callback queued with C_Timer.After.
+function mock.RunAfter()
+    local queued = mock.pending
+    mock.pending = {}
+    for _, entry in ipairs(queued) do
+        entry.callback()
+    end
+end
 
 function mock.RunTickers()
     for _, ticker in ipairs(mock.tickers) do
@@ -257,7 +294,10 @@ function UnitGUID(unit) return unit == "player" and "Player-1234-ABCDEF" or "Pet
 function UnitStat(_, index) return mock.stats[index] - 200, mock.stats[index], 200, 0 end
 function UnitHealthMax() return 4250000 end
 function UnitHealth() return 3100000 end
-function UnitArmor() return 3000, 4500, 4500, 0, 0 end
+mock.armor = { base = 3000, effective = 4500, posBuff = 0 }
+function UnitArmor()
+    return mock.armor.base, mock.armor.effective, mock.armor.effective, mock.armor.posBuff, 0
+end
 function GetAverageItemLevel() return 639.5, 636.2, 0 end
 function GetCritChance() return 21.34 end
 function GetSpellCritChance(school) return 18 + school end

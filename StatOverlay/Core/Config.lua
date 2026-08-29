@@ -30,6 +30,11 @@ local DEFAULTS = {
     hideOutOfCombat = false,
     tooltips = true,
 
+    -- Pinned tooltips, keyed by "section:key", each { section, key, custom,
+    -- point, relPoint, x, y }. Only dragged pins carry a position; the rest
+    -- stack down the side of the overlay.
+    pinnedTooltips = {},
+
     position = { point = "CENTER", relPoint = "CENTER", x = 300, y = 0 },
 
     -- Which stats are shown lives per character, in StatOverlayCharDB.
@@ -136,6 +141,12 @@ end
 -- Restores display settings and this character's stat rows. The watch list is
 -- deliberately kept: it is curated data, not a setting.
 function ns.ResetConfig()
+    -- Close pins against the old table before it is replaced, or their frames
+    -- would linger on screen with nothing backing them.
+    if ns.Tooltips then
+        ns.Tooltips:UnpinAll()
+    end
+
     StatOverlayDB = CopyDefaults({}, DEFAULTS)
     ns.db = StatOverlayDB
 
