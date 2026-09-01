@@ -1,5 +1,5 @@
 -- tests/wow_mock.lua
--- A minimal stand-in for the parts of the WoW API that StatOverlay touches.
+-- A minimal stand-in for the parts of the WoW API that Upkeep touches.
 --
 -- This is not an emulator. It exists so the addon can be loaded and driven
 -- outside the game, which catches load-order mistakes, nil API calls and bad

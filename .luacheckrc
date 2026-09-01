@@ -1,4 +1,4 @@
--- luacheck configuration for StatOverlay.
+-- luacheck configuration for Upkeep.
 -- WoW runs Lua 5.1 and exposes a large set of globals.
 
 std = "lua51"
@@ -8,15 +8,15 @@ exclude_files = { "tests/" }
 
 -- Addon saved variables and slash command globals are written by us.
 globals = {
-    "StatOverlayDB",
-    "StatOverlayCharDB",
-    "StatOverlayFrame",
-    "SLASH_STATOVERLAY1",
-    "SLASH_STATOVERLAY2",
+    "UpkeepDB",
+    "UpkeepCharDB",
+    "UpkeepFrame",
+    "SLASH_UPKEEP1",
+    "SLASH_UPKEEP2",
     "SlashCmdList",
-    "StatOverlay_PinHoveredTooltip",
-    "BINDING_HEADER_STATOVERLAY",
-    "BINDING_NAME_STATOVERLAY_PIN_TOOLTIP",
+    "Upkeep_PinHoveredTooltip",
+    "BINDING_HEADER_UPKEEP",
+    "BINDING_NAME_UPKEEP_PIN_TOOLTIP",
 }
 
 -- Everything the client provides, read-only from our point of view.

@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="UPKEEP_PIN_TOOLTIP" header="UPKEEP">
+		Upkeep_PinHoveredTooltip()
+	</Binding>
+</Bindings>

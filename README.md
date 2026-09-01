@@ -1,4 +1,4 @@
-# StatOverlay
+# Upkeep
 
 A lightweight World of Warcraft overlay for **Retail (The War Within)** that puts your
 character stats, live combat numbers, and active procs in one small movable panel.
@@ -29,45 +29,45 @@ alongside it.
 
 ## Install
 
-1. Copy the **`StatOverlay`** folder (not the repository root) into:
+1. Copy the **`Upkeep`** folder (not the repository root) into:
    - Windows: `World of Warcraft\_retail_\Interface\AddOns\`
    - macOS: `World of Warcraft/_retail_/Interface/AddOns/`
 2. Restart the game, or run `/reload` if it is already running.
-3. Make sure **StatOverlay** is ticked in the AddOns list on the character select screen.
+3. Make sure **Upkeep** is ticked in the AddOns list on the character select screen.
 
-The folder name must stay `StatOverlay` so it matches `StatOverlay.toc`.
+The folder name must stay `Upkeep` so it matches `Upkeep.toc`.
 
 ## Usage
 
-Drag the panel to move it (while unlocked), then `/so lock` to fix it in place.
+Drag the panel to move it (while unlocked), then `/up lock` to fix it in place.
 Locking also lets mouse clicks pass through, so it will not get in the way in combat.
 
 ### Commands
 
 | Command | What it does |
 | --- | --- |
-| `/so` | Show or hide the overlay |
-| `/so lock` / `/so unlock` | Lock or unlock dragging |
-| `/so config` | Open the options panel |
-| `/so scale <0.5-2>` | Set the overlay scale |
-| `/so width <120-320>` | Set the overlay width |
-| `/so font <8-20>` | Set the font size |
-| `/so stat` | List stat rows and whether each is shown |
-| `/so stat <name>` | Toggle a stat row for this character, e.g. `/so stat haste` |
-| `/so tooltips` | Toggle hover tooltips |
-| `/so pin [stat]` | Keep a tooltip on screen (the hovered one if no stat given) |
-| `/so unpin [stat\|all]` | Close pinned tooltips |
-| `/so pins` | List what is pinned |
-| `/so dps` | Print a summary of the last fight |
-| `/so watch <spellID>` | Track a spell's proc and cooldown |
-| `/so unwatch <spellID>` | Stop tracking a spell |
-| `/so watch list` | Show tracked spells |
-| `/so scan` | List your current buffs with their spell IDs |
-| `/so reset dps` | Clear combat totals |
-| `/so reset pos` | Move the overlay back to the centre |
-| `/so reset all` | Restore every setting to default |
+| `/up` | Show or hide the overlay |
+| `/up lock` / `/up unlock` | Lock or unlock dragging |
+| `/up config` | Open the options panel |
+| `/up scale <0.5-2>` | Set the overlay scale |
+| `/up width <120-320>` | Set the overlay width |
+| `/up font <8-20>` | Set the font size |
+| `/up stat` | List stat rows and whether each is shown |
+| `/up stat <name>` | Toggle a stat row for this character, e.g. `/up stat haste` |
+| `/up tooltips` | Toggle hover tooltips |
+| `/up pin [stat]` | Keep a tooltip on screen (the hovered one if no stat given) |
+| `/up unpin [stat\|all]` | Close pinned tooltips |
+| `/up pins` | List what is pinned |
+| `/up dps` | Print a summary of the last fight |
+| `/up watch <spellID>` | Track a spell's proc and cooldown |
+| `/up unwatch <spellID>` | Stop tracking a spell |
+| `/up watch list` | Show tracked spells |
+| `/up scan` | List your current buffs with their spell IDs |
+| `/up reset dps` | Clear combat totals |
+| `/up reset pos` | Move the overlay back to the centre |
+| `/up reset all` | Restore every setting to default |
 
-Everything is also available under **Options → AddOns → StatOverlay**.
+Everything is also available under **Options → AddOns → Upkeep**.
 
 ## What it shows
 
@@ -93,13 +93,13 @@ show the game's own spell tooltip.
 
 Rows pass clicks through even while accepting hover, so tooltips do not cost you the
 click-through that makes a locked overlay unobtrusive. Turn them off with
-`/so tooltips` if you would rather the overlay ignore the mouse entirely.
+`/up tooltips` if you would rather the overlay ignore the mouse entirely.
 
 ### Pinning a tooltip
 
 Any tooltip can be made to stick. Hover a row, then either **click the tooltip** or
 press the **Pin hovered tooltip** key (bind it under Options → Key Bindings →
-StatOverlay). `/so pin armor` pins one without hovering at all.
+Upkeep). `/up pin armor` pins one without hovering at all.
 
 A pinned tooltip:
 
@@ -107,11 +107,11 @@ A pinned tooltip:
   damage reduction live as buffs come and go;
 - stacks down the right-hand side of the overlay, and can be **dragged** anywhere —
   once dragged it keeps that spot;
-- closes on **right-click**, via its **close button**, or with `/so unpin`;
+- closes on **right-click**, via its **close button**, or with `/up unpin`;
 - is **remembered between sessions**, along with where you put it.
 
-Pins are stored per account in `StatOverlayDB.pinnedTooltips`, keyed by
-`section:stat`. `/so reset all` closes them.
+Pins are stored per account in `UpkeepDB.pinnedTooltips`, keyed by
+`section:stat`. `/up reset all` closes them.
 
 ### Combat
 
@@ -120,7 +120,7 @@ DPS, HPS, damage taken, and fight duration, parsed from the combat log:
 - **Overhealing is excluded** from HPS, so the number reflects healing that landed.
 - **Pet and guardian damage** is counted towards your DPS (toggleable).
 - Each pull starts a fresh segment. A separate session total keeps accumulating
-  until you run `/so reset dps`.
+  until you run `/up reset dps`.
 - The fight clock only advances while you are actually in combat.
 
 ### Procs
@@ -130,20 +130,20 @@ Two sources feed this list:
 - **Auto-detect** (on by default) surfaces any buff on you shorter than 60 seconds,
   which covers most trinket, talent, and set-bonus procs with no configuration.
   The duration cap is what keeps flasks, food, and raid buffs out of the list.
-- **Watched spells** are ones you add by ID with `/so watch`. These stay on the list
+- **Watched spells** are ones you add by ID with `/up watch`. These stay on the list
   whether the proc is up, on cooldown, or ready, so you can use it as a cooldown
   tracker too. The 1.5s global cooldown is deliberately never shown as a cooldown.
 
-To find a spell ID, get the buff on you and run `/so scan`.
+To find a spell ID, get the buff on you and run `/up scan`.
 
 ## Configuration storage
 
-- `StatOverlayDB` — display settings (scale, width, opacity, tooltips, section
+- `UpkeepDB` — display settings (scale, width, opacity, tooltips, section
   toggles), shared across all characters.
-- `StatOverlayCharDB` — which stats are shown and the proc watch list, per
+- `UpkeepCharDB` — which stats are shown and the proc watch list, per
   character, since both are class- and role-specific.
 
-`/so reset all` restores display settings and this character's stat rows. It leaves
+`/up reset all` restores display settings and this character's stat rows. It leaves
 the watch list alone: that is curated data, not a setting.
 
 ## Development
@@ -151,8 +151,8 @@ the watch list alone: that is curated data, not a setting.
 The addon is plain Lua with no build step. Source layout:
 
 ```
-StatOverlay/
-  StatOverlay.toc      load order and metadata
+Upkeep/
+  Upkeep.toc      load order and metadata
   Core/Init.lua        namespace, module registry, event bus
   Core/Config.lua      saved-variable defaults
   Core/Options.lua     Settings API panel
@@ -192,7 +192,7 @@ lua5.1 tests/run.lua      # 153 checks
 Syntax-check everything (WoW runs Lua 5.1):
 
 ```sh
-find StatOverlay -name '*.lua' -exec luac5.1 -p {} +
+find Upkeep -name '*.lua' -exec luac5.1 -p {} +
 ```
 
 The mock is deliberately strict about event names: registering an event it does not

@@ -70,7 +70,7 @@ end
 --
 -- In Midnight's restricted content the aura APIs do not merely return secret
 -- values, they refuse addon access outright: AuraUtil.ForEachAura throws
--- "Auras cannot be accessed when secret while tainted by 'StatOverlay'" from
+-- "Auras cannot be accessed when secret while tainted by 'Upkeep'" from
 -- inside GetAuraSlots, before our callback ever runs. Guarding the values a
 -- callback receives is therefore not enough - the call itself has to be
 -- wrapped.
@@ -334,7 +334,7 @@ function Procs:ListWatched()
 end
 
 -- Dumps current player buffs so the player can find the spell ID to watch.
--- Returns the list plus a `blocked` flag, so /so scan can say "this content
+-- Returns the list plus a `blocked` flag, so /up scan can say "this content
 -- hides auras" instead of the misleading "no buffs on you right now".
 function Procs:ScanAuras()
     local results = {}

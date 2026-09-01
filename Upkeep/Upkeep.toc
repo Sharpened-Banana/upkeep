@@ -1,10 +1,10 @@
 ## Interface: 110200
-## Title: StatOverlay
+## Title: Upkeep
 ## Notes: Movable overlay with character stats, live combat metrics, and proc/cooldown tracking.
 ## Author: lonezebra
 ## Version: 1.0.0
-## SavedVariables: StatOverlayDB
-## SavedVariablesPerCharacter: StatOverlayCharDB
+## SavedVariables: UpkeepDB
+## SavedVariablesPerCharacter: UpkeepCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## Category-enUS: Combat
 

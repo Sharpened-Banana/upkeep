@@ -15,7 +15,7 @@ local Options = ns:NewModule("Options")
 -- Why every call here is guarded, and why the failures are now *recorded*
 -- rather than silently dropped: a settings panel that half-registers is
 -- indistinguishable from one that never built, and the previous version
--- swallowed the error text from three separate pcalls, so "/so config does
+-- swallowed the error text from three separate pcalls, so "/up config does
 -- nothing" carried no way to find out why. Anything that goes wrong lands in
 -- this list and is reported once, with the real Lua error.
 local failures = {}
@@ -44,8 +44,8 @@ end
 -- before it fails, so the retry dies on a duplicate registration and *every*
 -- setting is lost while the category itself still registers fine. The result
 -- is a settings panel that opens completely empty, indistinguishable from
--- "/so config does nothing".
-local PROBE_PREFIX = "StatOverlay_signature_probe_"
+-- "/up config does nothing".
+local PROBE_PREFIX = "Upkeep_signature_probe_"
 local probeCount = 0
 local proxyStyle
 
@@ -164,7 +164,7 @@ local function BuildPanel()
     failures = {}
     proxyStyle = nil
 
-    local category, layout = Settings.RegisterVerticalLayoutCategory("StatOverlay")
+    local category, layout = Settings.RegisterVerticalLayoutCategory("Upkeep")
     if not category then return nil end
 
     local db = function() return ns.db end
@@ -178,50 +178,50 @@ local function BuildPanel()
 
     do
         local get, set = Accessors(db, "locked")
-        AddCheckbox(category, "SO_locked", "Lock overlay",
+        AddCheckbox(category, "UP_locked", "Lock overlay",
             "Stops the overlay from being dragged and lets clicks pass through it.", get, set)
     end
 
     do
         local get, set = Accessors(db, "hideOutOfCombat")
-        AddCheckbox(category, "SO_hideOOC", "Hide out of combat",
+        AddCheckbox(category, "UP_hideOOC", "Hide out of combat",
             "Only show the overlay while you are in combat.", get, set)
     end
 
     do
         local get, set = Accessors(db, "showHeaders")
-        AddCheckbox(category, "SO_headers", "Show section headers",
+        AddCheckbox(category, "UP_headers", "Show section headers",
             "Show the Stats / Combat / Procs labels.", get, set)
     end
 
     do
         local get, set = Accessors(db, "tooltips")
-        AddCheckbox(category, "SO_tooltips", "Show tooltips on hover",
+        AddCheckbox(category, "UP_tooltips", "Show tooltips on hover",
             "Explain each stat and show the rating behind it when you hover a row. "
             .. "Clicks still pass through to whatever is underneath.", get, set)
     end
 
     do
         local get, set = Accessors(db, "scale")
-        AddSlider(category, "SO_scale", "Scale", "Overall size of the overlay.",
+        AddSlider(category, "UP_scale", "Scale", "Overall size of the overlay.",
             0.5, 2.0, 0.05, function(value) return format("%.2f", value) end, get, set)
     end
 
     do
         local get, set = Accessors(db, "opacity")
-        AddSlider(category, "SO_opacity", "Background opacity", "Transparency of the overlay background.",
+        AddSlider(category, "UP_opacity", "Background opacity", "Transparency of the overlay background.",
             0, 1, 0.05, function(value) return format("%d%%", value * 100) end, get, set)
     end
 
     do
         local get, set = Accessors(db, "width")
-        AddSlider(category, "SO_width", "Width", "Overlay width in pixels.",
+        AddSlider(category, "UP_width", "Width", "Overlay width in pixels.",
             120, 320, 10, function(value) return format("%d", value) end, get, set)
     end
 
     do
         local get, set = Accessors(db, "fontSize")
-        AddSlider(category, "SO_fontSize", "Font size", "Text size used for rows.",
+        AddSlider(category, "UP_fontSize", "Font size", "Text size used for rows.",
             8, 20, 1, function(value) return format("%d", value) end, get, set)
     end
 
@@ -234,12 +234,12 @@ local function BuildPanel()
 
     do
         local get, set = Accessors(statsTable, "enabled")
-        AddCheckbox(category, "SO_stats", "Show stats section", nil, get, set)
+        AddCheckbox(category, "UP_stats", "Show stats section", nil, get, set)
     end
 
     for _, entry in ipairs(ns.STAT_LIST) do
         local get, set = Accessors(showTable, entry.key)
-        AddCheckbox(category, "SO_stat_" .. entry.key, entry.label,
+        AddCheckbox(category, "UP_stat_" .. entry.key, entry.label,
             "Shown on this character only.", get, set)
     end
 
@@ -258,7 +258,7 @@ local function BuildPanel()
 
     for _, entry in ipairs(combatOptions) do
         local get, set = Accessors(combatTable, entry.key)
-        AddCheckbox(category, "SO_combat_" .. entry.key, entry.label, nil, get, set)
+        AddCheckbox(category, "UP_combat_" .. entry.key, entry.label, nil, get, set)
     end
 
     AddButton(layout, "Meters", "Reset session", function()
@@ -270,31 +270,31 @@ local function BuildPanel()
 
     do
         local get, set = Accessors(procsTable, "enabled")
-        AddCheckbox(category, "SO_procs", "Show procs section", nil, get, set)
+        AddCheckbox(category, "UP_procs", "Show procs section", nil, get, set)
     end
 
     do
         local get, set = Accessors(procsTable, "autoDetect")
-        AddCheckbox(category, "SO_procs_auto", "Auto-detect procs",
+        AddCheckbox(category, "UP_procs_auto", "Auto-detect procs",
             "Automatically show short buffs on you, such as trinket and talent procs.", get, set)
     end
 
     do
         local get, set = Accessors(procsTable, "showInactiveWatched")
-        AddCheckbox(category, "SO_procs_inactive", "Show watched spells when ready",
+        AddCheckbox(category, "UP_procs_inactive", "Show watched spells when ready",
             "Keep watched spells on the list even when they are not active.", get, set)
     end
 
     do
         local get, set = Accessors(procsTable, "maxAuto")
-        AddSlider(category, "SO_procs_maxAuto", "Max auto-detected procs",
+        AddSlider(category, "UP_procs_maxAuto", "Max auto-detected procs",
             "How many auto-detected procs to show at once.",
             1, 10, 1, function(value) return format("%d", value) end, get, set)
     end
 
     do
         local get, set = Accessors(procsTable, "maxDuration")
-        AddSlider(category, "SO_procs_maxDuration", "Max proc duration",
+        AddSlider(category, "UP_procs_maxDuration", "Max proc duration",
             "Ignore buffs longer than this, so flasks and food do not show up.",
             5, 120, 5, function(value) return format("%ds", value) end, get, set)
     end
@@ -305,11 +305,11 @@ end
 
 function Options:OnEnable()
     if not Settings or not Settings.RegisterVerticalLayoutCategory then
-        ns.Print("this game version has no Settings API; use /so for configuration.")
+        ns.Print("this game version has no Settings API; use /up for configuration.")
         return
     end
     if not Settings.RegisterProxySetting then
-        ns.Print("this game version has no Settings.RegisterProxySetting; use /so for configuration.")
+        ns.Print("this game version has no Settings.RegisterProxySetting; use /up for configuration.")
         return
     end
 
@@ -325,7 +325,7 @@ function Options:OnEnable()
     else
         -- pcall's second return is the error; printing it is the whole point.
         ns.Print("|cffff4444could not build the options panel|r: " .. tostring(category))
-        ns.Print("use /so help for the slash-command equivalents.")
+        ns.Print("use /up help for the slash-command equivalents.")
     end
 end
 
@@ -336,7 +336,7 @@ end
 function ns.OpenOptions()
     local category = Options.category
     if not category or not Settings or not Settings.OpenToCategory then
-        ns.Print("options panel unavailable; use /so help for commands.")
+        ns.Print("options panel unavailable; use /up help for commands.")
         return
     end
 
@@ -349,5 +349,5 @@ function ns.OpenOptions()
     if categoryID ~= nil and pcall(Settings.OpenToCategory, categoryID) then return end
     if pcall(Settings.OpenToCategory, category) then return end
 
-    ns.Print("could not open the options panel; use /so help for commands.")
+    ns.Print("could not open the options panel; use /up help for commands.")
 end

@@ -1,5 +1,0 @@
-<Bindings>
-	<Binding name="STATOVERLAY_PIN_TOOLTIP" header="STATOVERLAY">
-		StatOverlay_PinHoveredTooltip()
-	</Binding>
-</Bindings>

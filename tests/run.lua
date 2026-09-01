@@ -1,5 +1,5 @@
 -- tests/run.lua
--- Loads StatOverlay against the mock API and drives it through a session.
+-- Loads Upkeep against the mock API and drives it through a session.
 --
 -- Run with:  lua5.1 tests/run.lua
 
@@ -50,7 +50,7 @@ _G.print = function(...)
     addonOutput[#addonOutput + 1] = table.concat({ mock and "" or "" }, "") .. tostring((select(1, ...)))
 end
 
-local ns = mock.LoadAddon("StatOverlay", FILES, "StatOverlay")
+local ns = mock.LoadAddon("Upkeep", FILES, "Upkeep")
 
 _G.print = realPrint
 
@@ -75,18 +75,18 @@ end
 section("Load and initialisation")
 --------------------------------------------------------------------------------
 
-check(ns.name == "StatOverlay", "namespace carries the addon name")
+check(ns.name == "Upkeep", "namespace carries the addon name")
 check(ns.UI ~= nil, "UI module registered at load time")
 
 mock.Fire("ADDON_LOADED", "SomeOtherAddon")
 check(ns.db == nil, "ignores ADDON_LOADED for other addons")
 
-mock.Fire("ADDON_LOADED", "StatOverlay")
+mock.Fire("ADDON_LOADED", "Upkeep")
 check(ns.db ~= nil, "saved variables initialised")
 check(ns.db.scale == 1.0, "defaults applied", ns.db and ns.db.scale)
 check(ns.chardb ~= nil and type(ns.chardb.watch) == "table", "per-character watch list created")
 check(ns.UI.frame ~= nil, "overlay frame built")
-check(SlashCmdList.STATOVERLAY ~= nil, "slash command registered")
+check(SlashCmdList.UPKEEP ~= nil, "slash command registered")
 
 -- Defaults must not be shared by reference, or one character's settings would
 -- leak into another's.
@@ -287,9 +287,9 @@ ns.StatsShown().armor = false
 ns.RefreshAll()
 
 -- A second character starts from its own defaults, not the first one's choices.
-local firstCharacter = StatOverlayCharDB
+local firstCharacter = UpkeepCharDB
 ns.StatsShown().speed = true
-StatOverlayCharDB = nil
+UpkeepCharDB = nil
 ns.InitConfig()
 check(ns.chardb ~= firstCharacter, "a new character gets a fresh character DB")
 check(ns.chardb.statsShow.speed == false, "second character does not inherit the first character's choices",
@@ -297,8 +297,8 @@ check(ns.chardb.statsShow.speed == false, "second character does not inherit the
 check(firstCharacter.statsShow.speed == true, "first character keeps its own choice")
 
 -- An upgrade from the account-wide layout carries the old choice across once.
-StatOverlayDB.stats.show = { crit = false, armor = true, haste = false }
-StatOverlayCharDB = nil
+UpkeepDB.stats.show = { crit = false, armor = true, haste = false }
+UpkeepCharDB = nil
 ns.InitConfig()
 check(ns.chardb.statsShow.crit == false, "legacy account-wide choice migrated (crit off)", ns.chardb.statsShow.crit)
 check(ns.chardb.statsShow.armor == true, "legacy account-wide choice migrated (armor on)", ns.chardb.statsShow.armor)
@@ -309,8 +309,8 @@ ns.chardb.statsShow.crit = true
 ns.InitConfig()
 check(ns.chardb.statsShow.crit == true, "migration does not re-run over later changes")
 
-StatOverlayDB.stats.show = nil
-StatOverlayCharDB = firstCharacter
+UpkeepDB.stats.show = nil
+UpkeepCharDB = firstCharacter
 ns.InitConfig()
 ns.RefreshAll()
 
@@ -330,7 +330,7 @@ ns.db.tooltips = true
 ns.RefreshAll()
 ns.UI:Relayout()
 
-local hoverTip = StatOverlayHoverTooltip
+local hoverTip = UpkeepHoverTooltip
 check(hoverTip ~= nil, "addon owns a hover tooltip frame rather than reusing GameTooltip")
 
 local function dumpOf(frame)
@@ -417,7 +417,7 @@ hoverTip.scripts.OnMouseDown(hoverTip)
 check(Tooltips:IsPinned("stats", "armor"), "clicking the hover tooltip pins it")
 check(not hoverTip.shown, "hover tooltip closes once pinned")
 
-local pinned = _G.StatOverlayPinnedTooltip1
+local pinned = _G.UpkeepPinnedTooltip1
 check(pinned ~= nil and pinned.shown, "a pinned tooltip frame is shown")
 dump = dumpOf(pinned)
 check(dump:find("Armor=") ~= nil, "pinned tooltip shows the stat", dump)
@@ -483,9 +483,9 @@ local okNone, reasonNone = Tooltips:PinHovered()
 check(not okNone, "pinning with nothing hovered is rejected", reasonNone)
 
 -- The key binding entry point is defined and safe to call.
-check(type(StatOverlay_PinHoveredTooltip) == "function", "binding handler is a global function")
-check(pcall(StatOverlay_PinHoveredTooltip), "binding handler runs without a hovered row")
-check(BINDING_NAME_STATOVERLAY_PIN_TOOLTIP ~= nil, "binding has a display name")
+check(type(Upkeep_PinHoveredTooltip) == "function", "binding handler is a global function")
+check(pcall(Upkeep_PinHoveredTooltip), "binding handler runs without a hovered row")
+check(BINDING_NAME_UPKEEP_PIN_TOOLTIP ~= nil, "binding has a display name")
 
 -- Resetting config must not leave orphaned pins on screen.
 Tooltips:Pin("stats", "armor")
@@ -568,7 +568,7 @@ ns.UI:UpdateVisibility()
 section("Slash commands")
 --------------------------------------------------------------------------------
 
-local handler = SlashCmdList.STATOVERLAY
+local handler = SlashCmdList.UPKEEP
 
 local function run(input)
     local silenced = _G.print
@@ -588,7 +588,7 @@ local commands = {
 
 for _, command in ipairs(commands) do
     local success, err = run(command)
-    check(success, "/so " .. (command == "" and "(toggle)" or command), err)
+    check(success, "/up " .. (command == "" and "(toggle)" or command), err)
 end
 
 check(ns.db.scale == 1.5, "scale command applied", ns.db.scale)

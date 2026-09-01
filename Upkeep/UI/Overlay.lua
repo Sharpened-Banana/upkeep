@@ -25,7 +25,7 @@ local layoutDirty = false
 --------------------------------------------------------------------------------
 
 local function CreateOverlayFrame()
-    local frame = CreateFrame("Frame", "StatOverlayFrame", UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", "UpkeepFrame", UIParent, "BackdropTemplate")
     frame:SetSize(190, 100)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
@@ -53,7 +53,7 @@ local function CreateOverlayFrame()
     -- Title, shown only while unlocked so the overlay stays clean in combat.
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     title:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
-    title:SetText("StatOverlay |cff888888(drag to move)|r")
+    title:SetText("Upkeep |cff888888(drag to move)|r")
     frame.title = title
 
     return frame
@@ -311,7 +311,7 @@ function UI:UpdateVisibility()
     local frame = self.frame
     if not frame then return end
 
-    -- An explicit /so hide always wins; the combat filter only applies when the
+    -- An explicit /up hide always wins; the combat filter only applies when the
     -- player has not hidden the overlay by hand.
     if ns.db.hidden then
         frame:Hide()
