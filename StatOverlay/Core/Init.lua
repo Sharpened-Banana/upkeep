@@ -68,11 +68,34 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 --------------------------------------------------------------------------------
--- Number / text helpers
+-- Secret-value helpers
+--
+-- Midnight's secret values error on comparison, arithmetic and string
+-- formatting rather than returning something useless, so any expression that
+-- touches unit/aura/combat data has to be able to fail without taking its
+-- caller down. ns.SafeCall runs one such expression and reports "could not
+-- read that" as nil.
 --------------------------------------------------------------------------------
 
-function ns.FormatNumber(value)
-    value = value or 0
+function ns.SafeCall(fn)
+    local ok, result = pcall(fn)
+    if ok then return result end
+    return nil
+end
+
+--------------------------------------------------------------------------------
+-- Number / text helpers
+--
+-- Midnight's secret values (see UI/Overlay.lua's SafeEqual) reach these
+-- helpers through stat readers and the damage meter: format() propagates a
+-- secret into a displayable secret string, but comparing or doing arithmetic
+-- on one errors. Each helper therefore tries its full pretty-print first and
+-- falls back to a comparison-free format of the raw value, so a secret
+-- renders as its plain number instead of erroring (or silently losing the
+-- row when the caller pcall-wraps its reader).
+--------------------------------------------------------------------------------
+
+local function FormatNumberRaw(value)
     if value >= 1e9 then
         return format("%.2fB", value / 1e9)
     elseif value >= 1e6 then
@@ -83,16 +106,34 @@ function ns.FormatNumber(value)
     return format("%d", value)
 end
 
-function ns.FormatPercent(value)
-    return format("%.2f%%", value or 0)
+function ns.FormatNumber(value)
+    value = value or 0
+    local ok, result = pcall(FormatNumberRaw, value)
+    if ok then return result end
+
+    ok, result = pcall(format, "%d", value)
+    if ok then return result end
+    return "-"
 end
 
-function ns.FormatTime(seconds)
-    seconds = seconds or 0
+function ns.FormatPercent(value)
+    local ok, result = pcall(format, "%.2f%%", value or 0)
+    if ok then return result end
+    return "-"
+end
+
+local function FormatTimeRaw(seconds)
     if seconds >= 60 then
         return format("%d:%02d", seconds / 60, seconds % 60)
     end
     return format("%.1fs", seconds)
+end
+
+function ns.FormatTime(seconds)
+    seconds = seconds or 0
+    local ok, result = pcall(FormatTimeRaw, seconds)
+    if ok then return result end
+    return "-"
 end
 
 --------------------------------------------------------------------------------

@@ -233,7 +233,12 @@ handlers.unwatch = function(argument)
 end
 
 handlers.scan = function()
-    PrintLines(ns:GetModule("Procs"):ScanAuras(), "no buffs on you right now.")
+    local lines, blocked = ns:GetModule("Procs"):ScanAuras()
+    if blocked then
+        ns.Print("this content hides aura information from addons, so buffs cannot be listed here.")
+        return
+    end
+    PrintLines(lines, "no buffs on you right now.")
 end
 
 --------------------------------------------------------------------------------

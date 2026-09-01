@@ -10,6 +10,9 @@ local Stats = ns:NewModule("Stats")
 local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
 local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 
+-- Shared guard for expressions that may touch secret values (Core/Init.lua).
+local SafeCall = ns.SafeCall
+
 local STAT_STRENGTH, STAT_AGILITY, STAT_STAMINA, STAT_INTELLECT = 1, 2, 3, 4
 
 -- Combat rating indices, with numeric fallbacks in case a global is missing.
@@ -24,6 +27,9 @@ local RATING = {
     lifesteal = CR_LIFESTEAL or 17,
     avoidance = CR_AVOIDANCE or 21,
     speed = CR_SPEED or 14,
+    dodge = CR_DODGE or 12,
+    parry = CR_PARRY or 13,
+    block = CR_BLOCK or 15,
 }
 
 local STAT_NAMES = {
@@ -152,6 +158,84 @@ readers.armor = function()
     return "Armor", ns.FormatNumber(effectiveArmor)
 end
 
+-- Effective attack power (base plus buffs/debuffs); mirrors StatBreakdown's
+-- own summation of UnitAttackPower's three return values.
+local function GetAttackPower()
+    local base, posBuff, negBuff = UnitAttackPower("player")
+    return (base or 0) + (posBuff or 0) + (negBuff or 0), base, posBuff, negBuff
+end
+
+-- Casters care about spell power, everyone else about attack power. Best
+-- school follows the same pattern as GetBestSpellCrit above.
+local function GetBestSpellPower()
+    local best = 0
+    for school = 2, 7 do
+        local power = GetSpellBonusDamage(school) or 0
+        if power > best then best = power end
+    end
+    return best
+end
+
+readers.power = function(primaryStat)
+    if primaryStat == STAT_INTELLECT then
+        return "Spell Power", ns.FormatNumber(GetBestSpellPower())
+    end
+    return "Attack Power", ns.FormatNumber(GetAttackPower())
+end
+
+-- format() on a secret value propagates the secret into a displayable
+-- string, but a bad value would otherwise error; same contract as
+-- ns.FormatNumber's fallback.
+local function SafeFormat(pattern, value)
+    local ok, result = pcall(format, pattern, value or 0)
+    if ok then return result end
+    return "-"
+end
+
+-- Main-hand and off-hand swing times, as the character sheet's Attack Speed.
+local function GetAttackSpeeds()
+    if not UnitAttackSpeed then return nil, nil end
+    local main, off = UnitAttackSpeed("player")
+    return main, off
+end
+
+readers.attackspeed = function()
+    local main = GetAttackSpeeds()
+    return "Attack Speed", SafeFormat("%.2f", main)
+end
+
+readers.dodge = function()
+    return "Dodge", ns.FormatPercent(GetDodgeChance() or 0)
+end
+
+readers.parry = function()
+    return "Parry", ns.FormatPercent(GetParryChance() or 0)
+end
+
+-- Only meaningful with a shield equipped, but shown unconditionally like
+-- every other stat: 0% for a caster is as informative as the row being
+-- absent, and the player controls visibility via the Stats options anyway.
+readers.block = function()
+    return "Block", ns.FormatPercent(GetBlockChance() or 0)
+end
+
+--------------------------------------------------------------------------------
+-- Shared computation
+--
+-- Both the overlay row builder and the public GetStatValue accessor read a
+-- stat through this one function, so there is exactly one place that turns a
+-- reader key into a label/value pair.
+--------------------------------------------------------------------------------
+
+local function ReadStat(key, primaryStat)
+    local reader = readers[key]
+    if not reader then return nil end
+
+    local ok, label, value = pcall(reader, primaryStat)
+    if not ok then return nil end
+    return label, value
+end
+
 --------------------------------------------------------------------------------
 -- Tooltips
 --
@@ -160,6 +244,89 @@ end
 
 local function Rating(index)
     return GetCombatRating and GetCombatRating(index) or 0
+end
+
+-- What the armor actually does, the way Blizzard's own character sheet puts
+-- it ("Physical damage reduction: 56.62%"), rather than only the rating.
+--
+-- The number comes from C_PaperDollInfo.GetArmorEffectiveness against an
+-- attacker of the player's own level - "an evenly matched enemy" in
+-- Blizzard's wording. There is deliberately no formula fallback: the old
+-- armor/((85*level)+400) curve is obsolete (it reports ~48% where the live
+-- client shows 56.62% for the same armor), so a client without the API omits
+-- the line rather than printing a confidently wrong one.
+-- Whether GetArmorEffectiveness reports a 0-1 ratio or an already-scaled
+-- percentage, worked out ONCE from a probe made with our own literal numbers
+-- and then cached as a multiplier.
+--
+-- The probe exists because of how secret values behave. Armor is secret in
+-- restricted content, a secret argument yields a secret result, and the
+-- three rules that follow from Midnight's design are:
+--
+--   arithmetic on a secret  -> allowed, produces another secret
+--   formatting a secret     -> allowed, produces a secret string to display
+--   COMPARING a secret      -> errors
+--
+-- (Displaying is permitted; branching on the value is what Blizzard blocks.)
+-- Deciding ratio-vs-percentage per call meant comparing the live value, so
+-- the moment a buff made armor secret the comparison threw, the guard
+-- returned nil, and the reduction line silently vanished from the tooltip.
+-- Probing with constants keeps every comparison on values that can never be
+-- secret, leaving the live path to do arithmetic and formatting only.
+local armorEffectivenessScale
+
+local function GetArmorEffectivenessScale()
+    if armorEffectivenessScale then return armorEffectivenessScale end
+    if not (C_PaperDollInfo and C_PaperDollInfo.GetArmorEffectiveness) then return nil end
+
+    -- Literal armor and level: never secret, so this comparison is safe.
+    local ok, probe = pcall(C_PaperDollInfo.GetArmorEffectiveness, 1000, 80)
+    if not ok or type(probe) ~= "number" then return nil end
+
+    armorEffectivenessScale = (probe <= 1) and 100 or 1
+    return armorEffectivenessScale
+end
+
+-- What the armor actually does, the way Blizzard's own character sheet puts
+-- it ("Physical damage reduction: 56.62%"), rather than only the rating.
+--
+-- The number comes from C_PaperDollInfo.GetArmorEffectiveness against an
+-- attacker of the player's own level - "an evenly matched enemy" in
+-- Blizzard's wording. There is deliberately no formula fallback: the old
+-- armor/((85*level)+400) curve is obsolete (it reports ~48% where the live
+-- client shows 56.62% for the same armor), so a client without the API omits
+-- the line rather than printing a confidently wrong one.
+--
+-- The result may itself be a secret; ns.FormatPercent renders one fine. No
+-- clamping is applied, deliberately - clamping means comparing, and the API
+-- does not return out-of-range effectiveness anyway.
+local function GetArmorReductionPercent(effectiveArmor)
+    local scale = GetArmorEffectivenessScale()
+    if not scale then return nil end
+
+    -- Re-checked rather than relying on the probe having found it: the scale
+    -- is cached for the session, so a client that loses the API afterwards
+    -- would otherwise reach the pcall below - where the function is looked up
+    -- while building the argument list, i.e. OUTSIDE the pcall, and indexing
+    -- a nil C_PaperDollInfo would throw past the guard and cost the whole
+    -- tooltip its lines.
+    local getEffectiveness = C_PaperDollInfo and C_PaperDollInfo.GetArmorEffectiveness
+    if not getEffectiveness then return nil end
+
+    local level
+    if UnitEffectiveLevel then
+        level = SafeCall(function() return UnitEffectiveLevel("player") end)
+    end
+    if not level and UnitLevel then
+        level = SafeCall(function() return UnitLevel("player") end)
+    end
+    if not level then return nil end
+
+    local ok, effectiveness = pcall(getEffectiveness, effectiveArmor, level)
+    if not ok then return nil end
+
+    -- Arithmetic only: a secret in yields a secret out, which still displays.
+    return SafeCall(function() return effectiveness * scale end)
 end
 
 local function RatingLines(index, ratingLabel)
@@ -182,6 +349,11 @@ local DESCRIPTIONS = {
     avoid = "Reduces damage taken from area-of-effect attacks.",
     speed = "Increases your movement speed.",
     armor = "Reduces the physical damage you take.",
+    power = "Increases the damage of your attacks or spells, depending on which one your specialisation scales with.",
+    attackspeed = "How long each of your weapon swings takes. Haste lowers it.",
+    dodge = "Chance to completely avoid a melee or ranged attack.",
+    parry = "Chance to deflect a melee attack and reduce the attacker's next swing timer. Requires a melee weapon.",
+    block = "Chance for your shield to block part of an incoming melee hit. Requires a shield.",
 }
 
 local tooltipBuilders = {}
@@ -196,15 +368,28 @@ tooltipBuilders.ilvl = function()
     }
 end
 
+-- True only when `value` is known to be past `threshold`. A secret value
+-- cannot be compared at all, so it reports false: the optional line is
+-- skipped rather than the comparison erroring and costing the caller every
+-- line it had already built (each tooltipBuilder runs inside a single pcall
+-- in TooltipProvider, so one bad comparison loses the whole tooltip body).
+local function KnownPast(value, threshold, wantGreater)
+    return SafeCall(function()
+        local number = value or 0
+        if wantGreater then return number > threshold end
+        return number < threshold
+    end) == true
+end
+
 local function StatBreakdown(index)
     local base, total, posBuff, negBuff = UnitStat("player", index)
     local lines = {
         { left = "Base", right = ns.FormatNumber(base) },
     }
-    if (posBuff or 0) > 0 then
+    if KnownPast(posBuff, 0, true) then
         lines[#lines + 1] = { left = "From gear and buffs", right = "+" .. ns.FormatNumber(posBuff) }
     end
-    if (negBuff or 0) < 0 then
+    if KnownPast(negBuff, 0, false) then
         lines[#lines + 1] = { left = "Reduced by", right = ns.FormatNumber(negBuff) }
     end
     return lines, total
@@ -269,11 +454,56 @@ tooltipBuilders.armor = function()
         { left = "Base", right = ns.FormatNumber(base) },
         { left = "Effective", right = ns.FormatNumber(effective) },
     }
-    if (posBuff or 0) > 0 then
+    if KnownPast(posBuff, 0, true) then
         lines[#lines + 1] = { left = "From buffs", right = "+" .. ns.FormatNumber(posBuff) }
+    end
+
+    -- What the armor is actually worth, the way the character sheet shows it.
+    local reduction = GetArmorReductionPercent(effective)
+    if reduction then
+        lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(reduction) }
+        lines[#lines + 1] = { left = "|cff808080Against an evenly matched enemy|r", right = "" }
+    end
+
+    return { lines = lines }
+end
+
+tooltipBuilders.attackspeed = function()
+    local main, off = GetAttackSpeeds()
+    local lines = {
+        { left = "Main hand", right = SafeFormat("%.2f sec", main) },
+    }
+    if off and KnownPast(off, 0, true) then
+        lines[#lines + 1] = { left = "Off hand", right = SafeFormat("%.2f sec", off) }
+    end
+
+    -- Haste is what moves this number, so name the connection rather than
+    -- leaving the player to infer it.
+    lines[#lines + 1] = { left = "Haste", right = ns.FormatPercent(GetHaste() or 0) }
+    return { lines = lines }
+end
+
+tooltipBuilders.power = function(primaryStat)
+    if primaryStat == STAT_INTELLECT then
+        return { lines = { { left = "Spell power", right = ns.FormatNumber(GetBestSpellPower()) } } }
+    end
+
+    local _, base, posBuff, negBuff = GetAttackPower()
+    local lines = {
+        { left = "Base", right = ns.FormatNumber(base) },
+    }
+    if KnownPast(posBuff, 0, true) then
+        lines[#lines + 1] = { left = "From gear and buffs", right = "+" .. ns.FormatNumber(posBuff) }
+    end
+    if KnownPast(negBuff, 0, false) then
+        lines[#lines + 1] = { left = "Reduced by", right = ns.FormatNumber(negBuff) }
     end
     return { lines = lines }
 end
+
+tooltipBuilders.dodge = function() return { lines = RatingLines(RATING.dodge) } end
+tooltipBuilders.parry = function() return { lines = RatingLines(RATING.parry) } end
+tooltipBuilders.block = function() return { lines = RatingLines(RATING.block) } end
 
 -- Called by the UI when the mouse enters a stat row.
 local function TooltipProvider(key)
@@ -287,14 +517,7 @@ local function TooltipProvider(key)
     if not entry then return nil end
 
     local primaryStat = GetPrimaryStatIndex()
-    local reader = readers[key]
-    local label, value
-    if reader then
-        local ok, readLabel, readValue = pcall(reader, primaryStat)
-        if ok then
-            label, value = readLabel, readValue
-        end
-    end
+    local label, value = ReadStat(key, primaryStat)
 
     local data = { title = label or entry.label, value = value, description = DESCRIPTIONS[key] }
 
@@ -325,12 +548,9 @@ function Stats:Update()
 
     for _, entry in ipairs(ns.STAT_LIST) do
         if shown[entry.key] then
-            local reader = readers[entry.key]
-            if reader then
-                local ok, label, value = pcall(reader, primaryStat)
-                if ok then
-                    rows[#rows + 1] = { label = label, value = value, tooltipKey = entry.key }
-                end
+            local label, value = ReadStat(entry.key, primaryStat)
+            if value then
+                rows[#rows + 1] = { label = label, value = value, tooltipKey = entry.key }
             end
         end
     end
@@ -338,10 +558,25 @@ function Stats:Update()
     ns.UI:SetSection("stats", rows, TooltipProvider)
 end
 
+-- Public accessor for other code that wants just the formatted display value
+-- for a stat, without caring whether the overlay is showing that row right
+-- now. Returns nil for a key that does not resolve to a reader, rather than
+-- erroring.
+function Stats:GetStatValue(statKey)
+    if type(statKey) ~= "string" then return nil end
+
+    local _, value = ReadStat(statKey, GetPrimaryStatIndex())
+    return value
+end
+
 function Stats:OnEnable()
     local function OnStatEvent(event, unit)
         -- Unit-scoped events fire for every unit in range; only ours matters.
-        if unit and unit ~= "player" then return end
+        -- UNIT_AURA's payload is fully secret while auras are secret, and
+        -- comparing a secret value errors, so an unreadable unit falls
+        -- through to updating rather than taking the handler down.
+        local ok, other = pcall(function() return unit and unit ~= "player" end)
+        if ok and other then return end
         self:Update()
     end
 

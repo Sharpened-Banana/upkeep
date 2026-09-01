@@ -23,6 +23,7 @@ globals = {
 read_globals = {
     -- Namespaces
     "C_AddOns", "C_Spell", "C_SpecializationInfo", "C_Timer", "C_UnitAuras",
+    "C_DamageMeter", "C_PaperDollInfo", "Enum",
     "AuraUtil", "Settings", "MinimalSliderWithSteppersMixin",
 
     -- Frames and widgets
@@ -33,8 +34,10 @@ read_globals = {
     "CreateSettingsListSectionHeaderInitializer", "CreateSettingsButtonInitializer",
 
     -- Unit and character info
-    "UnitGUID", "UnitStat", "UnitArmor", "UnitHealth", "UnitHealthMax", "InCombatLockdown",
+    "UnitGUID", "UnitStat", "UnitArmor", "UnitHealth", "UnitHealthMax", "UnitLevel",
+    "UnitEffectiveLevel", "UnitAttackPower", "UnitAttackSpeed", "InCombatLockdown",
     "GetAverageItemLevel", "GetCritChance", "GetSpellCritChance", "GetRangedCritChance",
+    "GetSpellBonusDamage", "GetDodgeChance", "GetParryChance", "GetBlockChance",
     "GetHaste", "GetMasteryEffect", "GetMastery",
     "GetCombatRating", "GetCombatRatingBonus", "GetVersatilityBonus",
     "GetLifesteal", "GetAvoidance", "GetSpeed",
@@ -49,6 +52,7 @@ read_globals = {
     "CR_VERSATILITY_DAMAGE_DONE", "CR_VERSATILITY_DAMAGE_TAKEN",
     "CR_LIFESTEAL", "CR_AVOIDANCE", "CR_SPEED",
     "CR_CRIT_MELEE", "CR_CRIT_SPELL", "CR_HASTE_MELEE", "CR_HASTE_SPELL", "CR_MASTERY",
+    "CR_DODGE", "CR_PARRY", "CR_BLOCK",
 
     -- Misc
     "GetTime", "format", "strjoin", "tostringall", "bit",
