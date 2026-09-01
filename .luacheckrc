@@ -22,7 +22,7 @@ globals = {
 -- Everything the client provides, read-only from our point of view.
 read_globals = {
     -- Namespaces
-    "C_AddOns", "C_Spell", "C_SpecializationInfo", "C_Timer", "C_UnitAuras",
+    "C_AddOns", "C_PaperDollInfo", "C_Spell", "C_SpecializationInfo", "C_Timer", "C_UnitAuras",
     "AuraUtil", "Settings", "MinimalSliderWithSteppersMixin",
 
     -- Frames and widgets
@@ -33,7 +33,7 @@ read_globals = {
     "CreateSettingsListSectionHeaderInitializer", "CreateSettingsButtonInitializer",
 
     -- Unit and character info
-    "UnitGUID", "UnitStat", "UnitArmor", "UnitHealth", "UnitHealthMax", "InCombatLockdown",
+    "UnitGUID", "UnitStat", "UnitArmor", "UnitHealth", "UnitHealthMax", "UnitLevel", "InCombatLockdown",
     "GetAverageItemLevel", "GetCritChance", "GetSpellCritChance", "GetRangedCritChance",
     "GetHaste", "GetMasteryEffect", "GetMastery",
     "GetCombatRating", "GetCombatRatingBonus", "GetVersatilityBonus",

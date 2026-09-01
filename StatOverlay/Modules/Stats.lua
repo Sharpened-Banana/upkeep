@@ -162,6 +162,41 @@ local function Rating(index)
     return GetCombatRating and GetCombatRating(index) or 0
 end
 
+-- Some clients return GetArmorEffectiveness as a 0-1 ratio, others as an
+-- already-scaled percentage. Worked out once from literal, unambiguous
+-- constants and cached for the session rather than re-checked on every call.
+local armorEffectivenessScale
+
+local function GetArmorEffectivenessScale()
+    if armorEffectivenessScale then return armorEffectivenessScale end
+    if not (C_PaperDollInfo and C_PaperDollInfo.GetArmorEffectiveness) then return nil end
+
+    local ok, probe = pcall(C_PaperDollInfo.GetArmorEffectiveness, 1000, 80)
+    if not ok or type(probe) ~= "number" then return nil end
+
+    armorEffectivenessScale = (probe <= 1) and 100 or 1
+    return armorEffectivenessScale
+end
+
+-- What the armor actually does, the way the character sheet puts it
+-- ("Physical damage reduction: 56.62%"), rather than only the raw value.
+-- Deliberately no formula fallback: the old armor/((85*level)+400) curve is
+-- outdated and reports a noticeably wrong number on current content, so a
+-- client without the API just omits the line instead of printing a
+-- confidently wrong one.
+local function GetArmorReductionPercent(effectiveArmor)
+    local scale = GetArmorEffectivenessScale()
+    if not scale then return nil end
+
+    local level = UnitLevel and UnitLevel("player")
+    if not level or level <= 0 then return nil end
+
+    local ok, effectiveness = pcall(C_PaperDollInfo.GetArmorEffectiveness, effectiveArmor, level)
+    if not ok or type(effectiveness) ~= "number" then return nil end
+
+    return effectiveness * scale
+end
+
 local function RatingLines(index, ratingLabel)
     return {
         { left = ratingLabel or "Rating", right = ns.FormatNumber(Rating(index)) },
@@ -272,6 +307,15 @@ tooltipBuilders.armor = function()
     if (posBuff or 0) > 0 then
         lines[#lines + 1] = { left = "From buffs", right = "+" .. ns.FormatNumber(posBuff) }
     end
+
+    -- Recomputed from the current effective armor every call, so a pinned
+    -- tooltip's periodic refresh (and a fresh hover) picks up gear, buff, or
+    -- debuff changes rather than showing a stale reduction.
+    local reduction = GetArmorReductionPercent(effective)
+    if reduction then
+        lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(reduction) }
+    end
+
     return { lines = lines }
 end
 

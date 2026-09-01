@@ -298,6 +298,14 @@ mock.armor = { base = 3000, effective = 4500, posBuff = 0 }
 function UnitArmor()
     return mock.armor.base, mock.armor.effective, mock.armor.effective, mock.armor.posBuff, 0
 end
+function UnitLevel(unit) return unit == "player" and 80 or 1 end
+
+-- Returns a 0-1 ratio, matching the client convention the addon's scale
+-- probe is meant to detect (a probe <= 1 means "multiply by 100 to display").
+C_PaperDollInfo = C_PaperDollInfo or {}
+function C_PaperDollInfo.GetArmorEffectiveness(armor, level)
+    return armor / (armor + 2500)
+end
 function GetAverageItemLevel() return 639.5, 636.2, 0 end
 function GetCritChance() return 21.34 end
 function GetSpellCritChance(school) return 18 + school end

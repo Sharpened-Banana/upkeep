@@ -426,11 +426,19 @@ check(dump:find("Click to keep this on screen") == nil, "pinned tooltip drops th
 
 -- Pinned content refreshes on its own so the numbers stay live. Change the
 -- underlying value and the pin must pick it up without being re-opened.
+local function expectedReduction(armor)
+    return string.format("%.2f%%", (armor / (armor + 2500)) * 100)
+end
+
 check(dumpOf(pinned):find("Effective=4500") ~= nil, "pinned tooltip starts with the current armor")
+check(dumpOf(pinned):find("Physical damage reduction=" .. expectedReduction(4500), 1, true) ~= nil,
+    "pinned tooltip shows damage reduction for the current armor", dumpOf(pinned))
 mock.armor.effective = 7777
 mock.RunTickers()
 check(dumpOf(pinned):find("Effective=7777") ~= nil, "pinned tooltip refreshes from its provider",
     dumpOf(pinned))
+check(dumpOf(pinned):find("Physical damage reduction=" .. expectedReduction(7777), 1, true) ~= nil,
+    "pinned tooltip's damage reduction refreshes along with the armor value", dumpOf(pinned))
 mock.armor.effective = 4500
 
 -- Hovering an already-pinned row should not double up.
