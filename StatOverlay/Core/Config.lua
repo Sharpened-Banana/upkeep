@@ -17,6 +17,7 @@ ns.STAT_LIST = {
     { key = "avoid",   label = "Avoidance" },
     { key = "speed",   label = "Speed" },
     { key = "armor",   label = "Armor" },
+    { key = "stagger", label = "Stagger" },
 }
 
 local DEFAULTS = {
@@ -59,6 +60,14 @@ local DEFAULTS = {
         maxDuration = 60,
         showInactiveWatched = true,
     },
+
+    buffs = {
+        enabled = true,
+        showRaidBuffs = true,
+        -- Off by default: relevant to everyone, but noisy while just
+        -- questing around with no flask or food up.
+        showSelfBuffs = false,
+    },
 }
 
 -- Anything class- or spec-specific belongs here rather than in the shared DB:
@@ -82,6 +91,7 @@ local CHAR_DEFAULTS = {
         avoid = false,
         speed = false,
         armor = false,
+        stagger = false,
     },
 }
 

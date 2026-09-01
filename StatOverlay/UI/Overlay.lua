@@ -9,8 +9,8 @@ local ADDON, ns = ...
 local UI = ns:NewModule("UI")
 ns.UI = UI
 
-local SECTION_ORDER = { "stats", "combat", "procs" }
-local SECTION_TITLES = { stats = "Stats", combat = "Combat", procs = "Procs" }
+local SECTION_ORDER = { "stats", "combat", "procs", "buffs" }
+local SECTION_TITLES = { stats = "Stats", combat = "Combat", procs = "Procs", buffs = "Buffs" }
 
 local PADDING = 8
 local SECTION_GAP = 6

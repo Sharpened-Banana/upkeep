@@ -15,6 +15,7 @@ UI\Tooltips.lua
 Modules\Stats.lua
 Modules\Combat.lua
 Modules\Procs.lua
+Modules\Buffs.lua
 Core\Options.lua
 Core\Commands.lua
 Bindings.xml

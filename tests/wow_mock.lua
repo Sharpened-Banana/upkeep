@@ -193,6 +193,7 @@ for _, event in ipairs({
     "LIFESTEAL_UPDATE", "AVOIDANCE_UPDATE",
     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_AVG_ITEM_LEVEL_UPDATE",
     "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
+    "GROUP_ROSTER_UPDATE",
 }) do
     mock.KNOWN_EVENTS[event] = true
 end
@@ -306,6 +307,22 @@ C_PaperDollInfo = C_PaperDollInfo or {}
 function C_PaperDollInfo.GetArmorEffectiveness(armor, level)
     return armor / (armor + 2500)
 end
+
+-- A different constant from GetArmorEffectiveness above so a test can tell
+-- which of the two the addon actually used.
+function C_PaperDollInfo.GetArmorEffectivenessAgainstTarget(armor)
+    return armor / (armor + 1500)
+end
+
+mock.target = { exists = false, hostile = false }
+function UnitExists(unit) return unit == "target" and mock.target.exists or false end
+function UnitCanAttack(_, unit) return unit == "target" and mock.target.hostile or false end
+
+mock.stagger = { percent = 0, againstTarget = nil }
+function C_PaperDollInfo.GetStaggerPercentage(unit)
+    if unit ~= "player" then return 0 end
+    return mock.stagger.percent, mock.stagger.againstTarget
+end
 function GetAverageItemLevel() return 639.5, 636.2, 0 end
 function GetCritChance() return 21.34 end
 function GetSpellCritChance(school) return 18 + school end
@@ -321,6 +338,9 @@ function GetAvoidance() return 1.8 end
 function GetSpeed() return 0.9 end
 function GetSpecialization() return 2 end
 function GetSpecializationInfo() return 252, "Frost", "desc", 135773, "DAMAGER", 2 end
+
+mock.inGroup = false
+function IsInGroup() return mock.inGroup end
 
 --------------------------------------------------------------------------------
 -- Spells and auras
@@ -353,8 +373,13 @@ C_Spell = {
     end,
 }
 
+-- Some content refuses aura access outright rather than merely hiding
+-- values; toggle this to simulate that refusal in a test.
+mock.aurasBlocked = false
+
 C_UnitAuras = {
     GetPlayerAuraBySpellID = function(spellID)
+        if mock.aurasBlocked then error("Auras cannot be accessed when secret") end
         for _, aura in ipairs(mock.auras) do
             if aura.spellId == spellID then return aura end
         end
@@ -364,6 +389,7 @@ C_UnitAuras = {
 
 AuraUtil = {
     ForEachAura = function(_, _, _, callback)
+        if mock.aurasBlocked then error("Auras cannot be accessed when secret") end
         for _, aura in ipairs(mock.auras) do
             if callback(aura) then return end
         end

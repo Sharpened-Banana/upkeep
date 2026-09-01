@@ -233,7 +233,11 @@ handlers.unwatch = function(argument)
 end
 
 handlers.scan = function()
-    PrintLines(ns:GetModule("Procs"):ScanAuras(), "no buffs on you right now.")
+    local lines, blocked = ns:GetModule("Procs"):ScanAuras()
+    local emptyMessage = blocked
+        and "this content hides aura information from addons right now."
+        or "no buffs on you right now."
+    PrintLines(lines, emptyMessage)
 end
 
 --------------------------------------------------------------------------------

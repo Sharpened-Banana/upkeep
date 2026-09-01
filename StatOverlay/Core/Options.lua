@@ -76,6 +76,7 @@ local function BuildPanel()
     local statsTable = function() return ns.db.stats end
     local combatTable = function() return ns.db.combat end
     local procsTable = function() return ns.db.procs end
+    local buffsTable = function() return ns.db.buffs end
     local showTable = function() return ns.StatsShown() end
 
     ------------------------------------------------------------------ Display
@@ -96,7 +97,7 @@ local function BuildPanel()
     do
         local get, set = Accessors(db, "showHeaders")
         AddCheckbox(category, "SO_headers", "Show section headers",
-            "Show the Stats / Combat / Procs labels.", get, set)
+            "Show the Stats / Combat / Procs / Buffs labels.", get, set)
     end
 
     do
@@ -202,6 +203,27 @@ local function BuildPanel()
         AddSlider(category, "SO_procs_maxDuration", "Max proc duration",
             "Ignore buffs longer than this, so flasks and food do not show up.",
             5, 120, 5, function(value) return format("%ds", value) end, get, set)
+    end
+
+    ------------------------------------------------------------------- Buffs
+    AddHeader(layout, "Buffs")
+
+    do
+        local get, set = Accessors(buffsTable, "enabled")
+        AddCheckbox(category, "SO_buffs", "Show buffs section", nil, get, set)
+    end
+
+    do
+        local get, set = Accessors(buffsTable, "showRaidBuffs")
+        AddCheckbox(category, "SO_buffs_raid", "Missing raid buffs",
+            "While in a group, flag raid buffs (Battle Shout, Arcane Intellect, and the like) that are not on you.",
+            get, set)
+    end
+
+    do
+        local get, set = Accessors(buffsTable, "showSelfBuffs")
+        AddCheckbox(category, "SO_buffs_self", "Missing flask/food",
+            "Flag when you have no flask or well fed buff active.", get, set)
     end
 
     Settings.RegisterAddOnCategory(category)

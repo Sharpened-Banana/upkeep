@@ -39,6 +39,7 @@ local FILES = {
     "Modules\\Stats.lua",
     "Modules\\Combat.lua",
     "Modules\\Procs.lua",
+    "Modules\\Buffs.lua",
     "Core\\Options.lua",
     "Core\\Commands.lua",
 }
@@ -133,6 +134,16 @@ check(findRow("stats", "Stamina") ~= nil, "enabling a stat adds its row")
 ns.chardb.statsShow.stamina = false
 ns.RefreshAll()
 
+check(findRow("stats", "Stagger") == nil, "stagger off by default like other niche stats")
+mock.stagger.percent = 12.5
+ns.chardb.statsShow.stagger = true
+ns.RefreshAll()
+local staggerRow = findRow("stats", "Stagger")
+check(staggerRow ~= nil and staggerRow.value == "12.50%",
+    "stagger stat reads from GetStaggerPercentage", staggerRow and staggerRow.value)
+ns.chardb.statsShow.stagger = false
+ns.RefreshAll()
+
 --------------------------------------------------------------------------------
 section("Combat module")
 --------------------------------------------------------------------------------
@@ -217,6 +228,94 @@ mock.inCombat = false
 mock.Fire("PLAYER_REGEN_ENABLED")
 
 --------------------------------------------------------------------------------
+section("Damage meter fallback (Patch 12.0)")
+--------------------------------------------------------------------------------
+
+-- Combat.lua decides whether C_DamageMeter exists once, at module-load time,
+-- so exercising that path means loading a second, independent instance with
+-- the API already in place - not toggling a global against the instance
+-- already under test above. Only Core/Init.lua and Modules/Combat.lua are
+-- needed; db/UI are stubbed directly rather than booting the whole addon.
+-- Nothing later in this file fires ADDON_LOADED or PLAYER_LOGIN again, so
+-- this instance's own (otherwise-unusable) copies of those handlers are
+-- never invoked and can't cross-talk with the instance above.
+mock.damageMeterSessions = {}
+C_DamageMeter = {
+    GetCombatSessionFromType = function(sessionType, meterType)
+        return mock.damageMeterSessions[sessionType .. ":" .. meterType]
+    end,
+    ResetCombatSessions = function()
+        mock.damageMeterResetCalled = true
+    end,
+}
+Enum = {
+    DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 },
+    DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, Hps = 3, DamageTaken = 7 },
+}
+
+local function SetMeterAmount(sessionType, meterType, amount)
+    mock.damageMeterSessions[sessionType .. ":" .. meterType] = {
+        combatSources = {
+            -- A second source first, so picking the local player's row
+            -- actually has to look past it rather than just taking index 1.
+            { isLocalPlayer = false, totalAmount = 999999, amountPerSecond = 999999 },
+            { isLocalPlayer = true, totalAmount = amount, amountPerSecond = amount },
+        },
+    }
+end
+
+local meterRendered = {}
+local ns2 = mock.LoadAddon("StatOverlay", { "Core\\Init.lua", "Modules\\Combat.lua" }, "StatOverlay")
+check(ns2:GetModule("Combat") ~= nil, "an instance loaded with C_DamageMeter present still builds its Combat module")
+
+ns2.playerGUID = PLAYER
+ns2.db = { combat = {
+    enabled = true, includePets = false, showDPS = true, showHPS = true,
+    showDamageTaken = true, showCombatTime = true, showSessionTotals = true,
+} }
+ns2.UI = { SetSection = function(_, id, rows) meterRendered[id] = rows or {} end }
+
+local function meterRow(label)
+    for _, row in ipairs(meterRendered.combat or {}) do
+        if row.label == label then return row end
+    end
+    return nil
+end
+
+SetMeterAmount(1, 1, 4321) -- current/dps
+SetMeterAmount(1, 3, 2222) -- current/hps
+SetMeterAmount(1, 7, 1111) -- current/taken
+SetMeterAmount(0, 1, 4321) -- overall/dps, for the session row below
+
+local Combat2 = ns2:GetModule("Combat")
+Combat2:OnEnable()
+
+check(meterRow("DPS") and meterRow("DPS").value == "4321",
+    "meter-sourced DPS reads the current session's dps metric", meterRow("DPS") and meterRow("DPS").value)
+check(meterRow("HPS") and meterRow("HPS").value == "2222",
+    "meter-sourced HPS picks the isLocalPlayer row out of several sources", meterRow("HPS") and meterRow("HPS").value)
+check(meterRow("DTPS") and meterRow("DTPS").value == "1111",
+    "meter-sourced DTPS reads the DamageTaken metric", meterRow("DTPS") and meterRow("DTPS").value)
+check(meterRow("Session DPS") and meterRow("Session DPS").value == "4321",
+    "session rows read the Overall session type instead of Current", meterRow("Session DPS") and meterRow("Session DPS").value)
+
+-- No session yet (e.g. before the first pull) falls back to 0 instead of erroring.
+mock.damageMeterSessions = {}
+Combat2:Update()
+check(meterRow("DPS") and meterRow("DPS").value == "0",
+    "a missing session reports 0 rather than erroring", meterRow("DPS") and meterRow("DPS").value)
+
+-- Resetting the session asks the game's own meter to clear too.
+mock.damageMeterResetCalled = false
+Combat2:ResetSession()
+check(mock.damageMeterResetCalled == true, "resetting the session also resets the game's meter")
+
+-- The slash-command report still renders when sourced from the meter.
+SetMeterAmount(1, 1, 500)
+local report = Combat2:GetReport()
+check(report:find("500 dps", 1, true) ~= nil, "the combat report reads its dps figure from the meter too", report)
+
+--------------------------------------------------------------------------------
 section("Procs module")
 --------------------------------------------------------------------------------
 
@@ -270,6 +369,95 @@ check(#ns.chardb.watch == 0, "watch list empty after unwatch")
 
 local badWatch, reason = ns:GetModule("Procs"):Watch(999999)
 check(not badWatch, "watching an unknown spell ID is rejected", reason)
+
+--------------------------------------------------------------------------------
+section("Aura access blocked")
+--------------------------------------------------------------------------------
+
+local Procs = ns:GetModule("Procs")
+
+mock.cooldowns[190319] = nil
+Procs:Watch(190319)
+mock.AddAura(190319, 10, 1)
+mock.Fire("UNIT_AURA", "player")
+check(findRow("procs", "Combustion") ~= nil, "watched spell reads normally before any refusal")
+check(not Procs:AurasBlocked(), "AurasBlocked reports false while reads are working")
+
+-- Content that refuses aura access outright must not crash the addon.
+mock.aurasBlocked = true
+local updateOk = pcall(function() Procs:Update() end)
+check(updateOk, "a refused aura read does not error out of Update")
+check(Procs:AurasBlocked(), "AurasBlocked reports true once a read is refused")
+
+local blockedRow = findRow("procs", "Combustion")
+check(blockedRow and blockedRow.value == "ready",
+    "a refused aura read falls back to ready rather than erroring", blockedRow and blockedRow.value)
+
+-- /so scan reports the refusal rather than claiming there are no buffs.
+local scanLines, scanBlocked = Procs:ScanAuras()
+check(#scanLines == 0 and scanBlocked == true, "ScanAuras reports blocked instead of an empty buff list")
+
+-- The refusal is not retried on every tick; it holds for a back-off window
+-- even after the underlying API would succeed again.
+mock.aurasBlocked = false
+check(Procs:AurasBlocked(), "refusal is not cleared before the retry window elapses")
+
+mock.Advance(5.1)
+check(not Procs:AurasBlocked(), "aura reads resume once the retry window elapses")
+Procs:Update()
+local recoveredRow = findRow("procs", "Combustion")
+check(recoveredRow and recoveredRow.value == "4.9s",
+    "watched spell reads normally again once unblocked", recoveredRow and recoveredRow.value)
+
+Procs:Unwatch(190319)
+mock.ClearAuras()
+
+--------------------------------------------------------------------------------
+section("Buffs module")
+--------------------------------------------------------------------------------
+
+local Buffs = ns:GetModule("Buffs")
+mock.spells[6673] = { name = "Battle Shout", icon = 1 }
+mock.spells[1459] = { name = "Arcane Intellect", icon = 2 }
+mock.spells[99101] = { name = "Well Fed", icon = 3 }
+mock.spells[99102] = { name = "Flask of the Whispered Pact", icon = 4 }
+
+mock.ClearAuras()
+mock.inGroup = false
+Buffs:Update()
+check(findRow("buffs", "Battle Shout") == nil, "raid buffs are not checked while solo")
+
+mock.inGroup = true
+Buffs:Update()
+check(findRow("buffs", "Battle Shout") ~= nil, "a missing raid buff is flagged while grouped")
+check(findRow("buffs", "Skyfury") ~= nil, "every tracked raid buff is checked")
+
+mock.AddAura(6673, 3600)
+mock.Fire("UNIT_AURA", "player")
+check(findRow("buffs", "Battle Shout") == nil, "an active raid buff is no longer flagged")
+check(findRow("buffs", "Arcane Intellect") ~= nil, "other missing raid buffs are still flagged")
+
+check(findRow("buffs", "Well Fed") == nil, "self buffs are not checked until enabled")
+ns.db.buffs.showSelfBuffs = true
+ns.RefreshAll()
+check(findRow("buffs", "Well Fed") ~= nil, "missing food is flagged once self buffs are enabled")
+check(findRow("buffs", "Flask") ~= nil, "missing flask is flagged once self buffs are enabled")
+
+mock.AddAura(99101, 3600)
+mock.AddAura(99102, 3600)
+mock.Fire("UNIT_AURA", "player")
+check(findRow("buffs", "Well Fed") == nil, "food matched by name clears the row regardless of spell ID")
+check(findRow("buffs", "Flask") == nil, "a flask matched by its \"Flask of\" prefix clears the row")
+
+ns.db.buffs.enabled = false
+ns.RefreshAll()
+check(#(rendered.buffs or {}) == 0, "disabling the buffs section clears its rows")
+
+ns.db.buffs.enabled = true
+ns.db.buffs.showSelfBuffs = false
+mock.inGroup = false
+mock.ClearAuras()
+ns.RefreshAll()
 
 --------------------------------------------------------------------------------
 section("Per-character stat visibility")
@@ -372,6 +560,31 @@ dump = dumpOf(hoverTip)
 check(dump:find("Damage and healing done") ~= nil, "versatility tooltip covers damage done", dump)
 check(dump:find("Damage taken reduced by") ~= nil, "versatility tooltip covers damage reduction", dump)
 
+-- Stagger only carries a second line when the API actually hands one back.
+ns.chardb.statsShow.stagger = true
+mock.stagger = { percent = 12.5, againstTarget = nil }
+ns.RefreshAll()
+ns.UI:Relayout()
+local staggerFrame = rowFrameFor("stagger")
+check(staggerFrame ~= nil, "stagger row carries a tooltip key once enabled")
+staggerFrame.scripts.OnEnter(staggerFrame)
+dump = dumpOf(hoverTip)
+check(dump:find("Of health staggered=12.50%%") ~= nil, "stagger tooltip shows the staggered portion", dump)
+check(dump:find("From your current target") == nil,
+    "no target-specific line when the API does not provide one", dump)
+
+mock.stagger.againstTarget = 30
+ns.RefreshAll()
+staggerFrame.scripts.OnEnter(staggerFrame)
+dump = dumpOf(hoverTip)
+check(dump:find("From your current target=30.00%%") ~= nil,
+    "stagger tooltip adds the target-specific figure when the API provides one", dump)
+
+ns.chardb.statsShow.stagger = false
+mock.stagger = { percent = 0, againstTarget = nil }
+ns.RefreshAll()
+ns.UI:Relayout()
+
 -- Primary stat breaks down base versus buffs.
 local primaryFrame = rowFrameFor("primary")
 primaryFrame.scripts.OnEnter(primaryFrame)
@@ -440,6 +653,28 @@ check(dumpOf(pinned):find("Effective=7777") ~= nil, "pinned tooltip refreshes fr
 check(dumpOf(pinned):find("Physical damage reduction=" .. expectedReduction(7777), 1, true) ~= nil,
     "pinned tooltip's damage reduction refreshes along with the armor value", dumpOf(pinned))
 mock.armor.effective = 4500
+
+-- Once the player has a hostile target, the reduction figure comes from
+-- GetArmorEffectivenessAgainstTarget instead of the same-level estimate.
+local function expectedTargetReduction(armor)
+    return string.format("%.2f%%", (armor / (armor + 1500)) * 100)
+end
+
+mock.target = { exists = true, hostile = true }
+mock.RunTickers()
+check(dumpOf(pinned):find("Physical damage reduction=" .. expectedTargetReduction(4500), 1, true) ~= nil,
+    "armor tooltip switches to the target-specific reduction once you have a hostile target", dumpOf(pinned))
+check(dumpOf(pinned):find("Against your current target") ~= nil,
+    "the target-specific figure is labelled as such", dumpOf(pinned))
+
+mock.target = { exists = true, hostile = false }
+mock.RunTickers()
+check(dumpOf(pinned):find("Physical damage reduction=" .. expectedReduction(4500), 1, true) ~= nil,
+    "a friendly target falls back to the same-level estimate rather than using GetArmorEffectivenessAgainstTarget",
+    dumpOf(pinned))
+
+mock.target = { exists = false, hostile = false }
+mock.RunTickers()
 
 -- Hovering an already-pinned row should not double up.
 armorFrame.scripts.OnEnter(armorFrame)

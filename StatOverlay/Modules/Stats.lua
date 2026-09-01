@@ -152,6 +152,18 @@ readers.armor = function()
     return "Armor", ns.FormatNumber(effectiveArmor)
 end
 
+-- Brewmaster-specific, but shown the same way every other stat is: opt-in via
+-- statsShow, with no class gating - a Monk not specced Brewmaster just sees 0%.
+readers.stagger = function()
+    local getStagger = C_PaperDollInfo and C_PaperDollInfo.GetStaggerPercentage
+    local stagger = 0
+    if getStagger then
+        local ok, value = pcall(getStagger, "player")
+        if ok then stagger = value or 0 end
+    end
+    return "Stagger", ns.FormatPercent(stagger)
+end
+
 --------------------------------------------------------------------------------
 -- Tooltips
 --
@@ -197,6 +209,22 @@ local function GetArmorReductionPercent(effectiveArmor)
     return effectiveness * scale
 end
 
+-- Same idea, but against the player's actual current target rather than an
+-- assumed same-level enemy - what the character panel shows once you have
+-- someone selected. Shares the same scale as GetArmorEffectiveness: they are
+-- clearly the same family of API, just against a different attacker.
+local function GetArmorReductionAgainstTarget(effectiveArmor)
+    local scale = GetArmorEffectivenessScale()
+    if not scale then return nil end
+    if not (C_PaperDollInfo.GetArmorEffectivenessAgainstTarget and UnitExists and UnitCanAttack) then return nil end
+    if not (UnitExists("target") and UnitCanAttack("player", "target")) then return nil end
+
+    local ok, effectiveness = pcall(C_PaperDollInfo.GetArmorEffectivenessAgainstTarget, effectiveArmor)
+    if not ok or type(effectiveness) ~= "number" then return nil end
+
+    return effectiveness * scale
+end
+
 local function RatingLines(index, ratingLabel)
     return {
         { left = ratingLabel or "Rating", right = ns.FormatNumber(Rating(index)) },
@@ -217,6 +245,7 @@ local DESCRIPTIONS = {
     avoid = "Reduces damage taken from area-of-effect attacks.",
     speed = "Increases your movement speed.",
     armor = "Reduces the physical damage you take.",
+    stagger = "Brewmaster: the portion of incoming damage held back to be taken over time instead of all at once.",
 }
 
 local tooltipBuilders = {}
@@ -309,11 +338,38 @@ tooltipBuilders.armor = function()
     end
 
     -- Recomputed from the current effective armor every call, so a pinned
-    -- tooltip's periodic refresh (and a fresh hover) picks up gear, buff, or
-    -- debuff changes rather than showing a stale reduction.
-    local reduction = GetArmorReductionPercent(effective)
-    if reduction then
-        lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(reduction) }
+    -- tooltip's periodic refresh (and a fresh hover) picks up gear, buff,
+    -- debuff, or target changes rather than showing a stale reduction.
+    local targetReduction = GetArmorReductionAgainstTarget(effective)
+    if targetReduction then
+        lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(targetReduction) }
+        lines[#lines + 1] = { left = "|cff808080Against your current target|r", right = "" }
+    else
+        local reduction = GetArmorReductionPercent(effective)
+        if reduction then
+            lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(reduction) }
+            lines[#lines + 1] = { left = "|cff808080Against an evenly matched enemy|r", right = "" }
+        end
+    end
+
+    return { lines = lines }
+end
+
+tooltipBuilders.stagger = function()
+    local getStagger = C_PaperDollInfo and C_PaperDollInfo.GetStaggerPercentage
+    local stagger, staggerAgainstTarget = 0, nil
+    if getStagger then
+        local ok, value, valueAgainstTarget = pcall(getStagger, "player")
+        if ok then
+            stagger, staggerAgainstTarget = value or 0, valueAgainstTarget
+        end
+    end
+
+    local lines = {
+        { left = "Of health staggered", right = ns.FormatPercent(stagger or 0) },
+    }
+    if staggerAgainstTarget then
+        lines[#lines + 1] = { left = "From your current target", right = ns.FormatPercent(staggerAgainstTarget) }
     end
 
     return { lines = lines }

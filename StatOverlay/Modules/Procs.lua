@@ -54,11 +54,28 @@ local function GetCooldownRemaining(spellID)
     return remaining > 0 and remaining or 0
 end
 
+-- This module updates on a 0.1s ticker and on every UNIT_AURA, so a refusal
+-- guaranteed to fail for the rest of an encounter would otherwise fail
+-- thousands of times over; ns.AurasReadable/ns.NoteAurasBlocked (Core/Init.lua)
+-- hold the shared back-off, since a refusal applies to every module reading
+-- auras, not just this one.
+
+-- Lets callers (the slash commands) explain an empty result rather than
+-- implying there are no buffs.
+function Procs:AurasBlocked()
+    return ns.AurasBlocked()
+end
+
 local function GetPlayerAura(spellID)
-    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
-        return C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+    if not (C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID) then return nil end
+    if not ns.AurasReadable() then return nil end
+
+    local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+    if not ok then
+        ns.NoteAurasBlocked()
+        return nil
     end
-    return nil
+    return aura
 end
 
 --------------------------------------------------------------------------------
@@ -71,8 +88,12 @@ local function CollectAutoProcs(watchedSet, maxDuration)
     local found = {}
 
     if not AuraUtil or not AuraUtil.ForEachAura then return found end
+    if not ns.AurasReadable() then return found end
 
-    AuraUtil.ForEachAura("player", "HELPFUL", nil, function(aura)
+    -- The whole iteration is wrapped, not just the per-aura callback: a
+    -- refusal is thrown from inside ForEachAura itself, before the callback
+    -- below ever runs.
+    local ok = pcall(AuraUtil.ForEachAura, "player", "HELPFUL", nil, function(aura)
         if not aura or not aura.spellId then return end
         if watchedSet[aura.spellId] then return end
 
@@ -87,6 +108,14 @@ local function CollectAutoProcs(watchedSet, maxDuration)
             count = aura.applications or 0,
         }
     end, true)
+
+    if not ok then
+        ns.NoteAurasBlocked()
+        -- Whatever the iteration managed before it was refused is a partial
+        -- view of the player's buffs; showing half a proc list is worse than
+        -- showing none.
+        return {}
+    end
 
     -- Shortest remaining first, so the thing about to fall off is on top.
     table.sort(found, function(a, b) return a.expirationTime < b.expirationTime end)
@@ -245,17 +274,26 @@ function Procs:ListWatched()
 end
 
 -- Dumps current player buffs so the player can find the spell ID to watch.
+-- Returns the list plus a `blocked` flag, so /so scan can say "this content
+-- hides auras" instead of the misleading "no buffs on you right now".
 function Procs:ScanAuras()
     local results = {}
-    if not AuraUtil or not AuraUtil.ForEachAura then return results end
+    if not AuraUtil or not AuraUtil.ForEachAura then return results, false end
 
-    AuraUtil.ForEachAura("player", "HELPFUL", nil, function(aura)
+    -- Player-invoked, so it retries immediately rather than waiting out the
+    -- back-off a ticker refusal may have started.
+    local ok = pcall(AuraUtil.ForEachAura, "player", "HELPFUL", nil, function(aura)
         if aura and aura.spellId then
             results[#results + 1] = format("%s |cff888888(%d)|r", aura.name or "?", aura.spellId)
         end
     end, true)
 
-    return results
+    if not ok then
+        ns.NoteAurasBlocked()
+        return {}, true
+    end
+
+    return results, false
 end
 
 --------------------------------------------------------------------------------

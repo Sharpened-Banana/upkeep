@@ -68,6 +68,44 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 --------------------------------------------------------------------------------
+-- Aura availability
+--
+-- Some content refuses aura access to addons outright rather than merely
+-- hiding values: AuraUtil.ForEachAura and C_UnitAuras.GetPlayerAuraBySpellID
+-- can throw instead of returning. Shared across every module that reads
+-- auras (Procs, Buffs) so one refusal backs all of them off together rather
+-- than each discovering, and re-announcing, the same restriction on its own.
+-- A module still has to wrap its own call in pcall and call ns.NoteAurasBlocked
+-- on failure; this just holds the shared cooldown and one-time notice.
+--------------------------------------------------------------------------------
+
+local AURA_RETRY_INTERVAL = 5
+local auraBlockedUntil = 0
+local auraNoticeShown = false
+
+function ns.AurasReadable()
+    return GetTime() >= auraBlockedUntil
+end
+
+function ns.NoteAurasBlocked()
+    auraBlockedUntil = GetTime() + AURA_RETRY_INTERVAL
+
+    -- Said once per session, not once per refusal: the player should know why
+    -- proc and buff tracking emptied out, but this is a game restriction, not
+    -- an addon fault, and it must never become its own spam.
+    if not auraNoticeShown then
+        auraNoticeShown = true
+        ns.Print("this content hides aura information from addons, so proc and buff tracking is paused here.")
+    end
+end
+
+-- Lets callers (the slash commands) explain an empty result rather than
+-- implying there is nothing to report.
+function ns.AurasBlocked()
+    return not ns.AurasReadable()
+end
+
+--------------------------------------------------------------------------------
 -- Number / text helpers
 --------------------------------------------------------------------------------
 
