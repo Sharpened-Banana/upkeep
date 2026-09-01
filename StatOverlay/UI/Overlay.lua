@@ -125,14 +125,50 @@ end
 -- Public API
 --------------------------------------------------------------------------------
 
+local function RawEqual(a, b) return a == b end
+
+-- Some unit-stat APIs (UnitStat, UnitArmor, UnitHealthMax, ...) return opaque
+-- "secret" values in certain content, and formatting one taints the resulting
+-- string as secret too. Comparing two secret values with == errors instead of
+-- returning a boolean, so this falls back to "not equal" (forcing a
+-- relayout) rather than propagating that error.
+local function SafeEqual(a, b)
+    local ok, result = pcall(RawEqual, a, b)
+    return ok and result
+end
+
+-- True when two row sets would draw identically. Only the fields LayoutSection
+-- actually reads into the visible label/value/icon are compared: alpha and
+-- colour churn (e.g. a proc's colour flipping between ready/active) always
+-- comes bundled with a label or value change anyway, so checking them too
+-- would only cost more without ever avoiding a real relayout.
+local function RowsEqual(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+        local ra, rb = a[i], b[i]
+        if not SafeEqual(ra.label, rb.label) or not SafeEqual(ra.value, rb.value) or not SafeEqual(ra.icon, rb.icon) then
+            return false
+        end
+    end
+    return true
+end
+
 -- rows is an array of { label, value, icon, labelColor, valueColor, alpha,
 -- tooltipKey }. tooltipProvider is called as provider(tooltipKey) on hover and
 -- returns either { spellID } or { title, value, lines, description }.
+--
+-- Callers (Procs:Update in particular) run on a 0.1s ticker regardless of
+-- whether anything changed, so this only actually dirties the layout - and
+-- pays for UI:Relayout()'s SetFont-per-row cost - when the new rows would
+-- draw differently, instead of unconditionally on every call.
 function UI:SetSection(id, rows, tooltipProvider)
+    rows = rows or {}
     local section = GetSection(id)
-    section.data = rows or {}
+    if not RowsEqual(section.data, rows) then
+        layoutDirty = true
+    end
+    section.data = rows
     section.tooltipProvider = tooltipProvider
-    layoutDirty = true
 end
 
 function UI:MarkDirty()

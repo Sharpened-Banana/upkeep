@@ -220,9 +220,12 @@ local function RestackPins()
             else
                 pin:SetPoint("TOPLEFT", ns.UI.frame, "TOPRIGHT", PIN_GAP, 0)
             end
+            -- Only pins actually in the stack chain anchor the next one; a
+            -- custom-dragged pin sitting between two stacked pins would
+            -- otherwise pull the rest of the stack to wherever it was
+            -- dropped instead of leaving them on the overlay's edge.
+            previous = pin
         end
-
-        if pin then previous = pin end
     end
 end
 
@@ -313,10 +316,35 @@ function Tooltips:PinHovered()
     return ok, result
 end
 
+-- A human-readable label for a pinned tooltip - the stat's display label, or
+-- a proc's spell name - rather than the internal "section:key" id
+-- (e.g. "stats:armor", "procs:190319") that id is built from.
+local function FriendlyPinLabel(id)
+    local pin = pins[id]
+    if not pin then return id end
+
+    if pin.sectionID == "stats" then
+        for _, entry in ipairs(ns.STAT_LIST) do
+            if entry.key == pin.key then return entry.label end
+        end
+    elseif pin.sectionID == "procs" then
+        local name
+        if C_Spell and C_Spell.GetSpellInfo then
+            local info = C_Spell.GetSpellInfo(pin.key)
+            name = info and info.name
+        elseif GetSpellInfo then
+            name = (GetSpellInfo(pin.key))
+        end
+        if name then return name end
+    end
+
+    return id
+end
+
 function Tooltips:ListPinned()
     local list = {}
     for _, id in ipairs(pinOrder) do
-        list[#list + 1] = id
+        list[#list + 1] = FriendlyPinLabel(id)
     end
     return list
 end
