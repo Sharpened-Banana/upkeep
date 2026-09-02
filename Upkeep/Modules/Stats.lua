@@ -196,10 +196,6 @@ end
 
 -- What the armor actually does, the way the character sheet puts it
 -- ("Physical damage reduction: 56.62%"), rather than only the raw value.
--- Deliberately no formula fallback: the old armor/((85*level)+400) curve is
--- outdated and reports a noticeably wrong number on current content, so a
--- client without the API just omits the line instead of printing a
--- confidently wrong one.
 local function GetArmorReductionPercent(effectiveArmor)
     local scale = GetArmorEffectivenessScale()
     if not scale then return nil end
@@ -227,6 +223,70 @@ local function GetArmorReductionAgainstTarget(effectiveArmor)
     if not ok or type(effectiveness) ~= "number" then return nil end
 
     return effectiveness * scale
+end
+
+--------------------------------------------------------------------------------
+-- Manual armor-reduction estimate
+--
+-- The two functions above go through Blizzard's own curve via
+-- C_PaperDollInfo, which is why they are trustworthy - but that call can
+-- fail even when the API exists at all: effective armor is a secret value
+-- during some combat/content states (see Core/Init.lua), and Blizzard's own
+-- internal comparisons against a secret throw, caught above only as "no
+-- result." When that happens this manual formula, built from pure
+-- arithmetic (division and addition only, never a comparison on the armor
+-- value itself), still works on a secret the same way ns.FormatNumber does.
+--
+-- The formula is Blizzard's published post-squish curve, unchanged since
+-- Legion aside from one new linear term added at each later level-cap
+-- bump (60, 80, 85); it is used here ONLY as a last resort and is never
+-- trusted blindly - see ValidateEstimate below.
+--------------------------------------------------------------------------------
+
+local function EstimateArmorConstant(level)
+    local k = 400 + 85 * level
+    if level > 59 then k = k + 4.5 * (level - 59) end
+    if level > 80 then k = k + 20 * (level - 80) end
+    if level > 85 then k = k + 22 * (level - 85) end
+    return k
+end
+
+-- armor is never tested for truthiness here - it can be the same secret
+-- value the live API just failed on, and a plain `if`/`not` on one throws
+-- exactly like a comparison does. Only pure arithmetic touches it. The
+-- result can end up secret too (division doesn't strip the tag), so success
+-- is reported through pcall's own boolean - never by testing the number
+-- itself - and callers must do the same rather than write `if estimate`.
+local function EstimateArmorReductionPercent(armor, level)
+    if not level or level <= 0 then return false, nil end
+    local ok, pct = pcall(function()
+        local raw = (armor / (armor + EstimateArmorConstant(level))) * 100
+        if ns.KnownPast(raw, 75, true) then return 75 end
+        return raw
+    end)
+    if not ok then return false, nil end
+    return true, pct
+end
+
+-- A future level squish or curve rework would make the formula above wrong
+-- without throwing - it would just quietly compute a different number. So
+-- rather than trust it forever, check it against the real API every time
+-- that succeeds, using the exact armor/level pair just proven live: one
+-- comparison more than about a percentage point off is enough to stop
+-- offering the estimate for the rest of the session.
+local estimateTrusted = true
+
+local function ValidateEstimate(armor, level, actualPercent)
+    if not estimateTrusted then return end
+    local haveEstimate, estimate = EstimateArmorReductionPercent(armor, level)
+    if not haveEstimate then return end
+
+    local withinTolerance = ns.SafeCall(function()
+        return math.abs(estimate - actualPercent) < 1
+    end)
+    if withinTolerance ~= true then
+        estimateTrusted = false
+    end
 end
 
 local function RatingLines(index, ratingLabel)
@@ -380,15 +440,38 @@ tooltipBuilders.armor = function()
     -- Recomputed from the current effective armor every call, so a pinned
     -- tooltip's periodic refresh (and a fresh hover) picks up gear, buff,
     -- debuff, or target changes rather than showing a stale reduction.
+    local targetLevel = UnitLevel and UnitLevel("target")
+    local playerLevel = UnitLevel and UnitLevel("player")
     local targetReduction = GetArmorReductionAgainstTarget(effective)
+    local reduction = not targetReduction and GetArmorReductionPercent(effective) or nil
+
     if targetReduction then
+        ValidateEstimate(effective, targetLevel, targetReduction)
         lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(targetReduction) }
         lines[#lines + 1] = { left = "|cff808080Against your current target|r", right = "" }
+    elseif reduction then
+        ValidateEstimate(effective, playerLevel, reduction)
+        lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(reduction) }
+        lines[#lines + 1] = { left = "|cff808080Against an evenly matched enemy|r", right = "" }
     else
-        local reduction = GetArmorReductionPercent(effective)
-        if reduction then
-            lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(reduction) }
-            lines[#lines + 1] = { left = "|cff808080Against an evenly matched enemy|r", right = "" }
+        -- The live call failed even though the scale probe below proves the
+        -- API exists on this client - almost always because effective armor
+        -- is unreadable right now, either a Patch 12.0 secret value
+        -- mid-combat or this instance restricting addon reads outright (the
+        -- same reason Procs/Buffs may be reporting aura tracking as
+        -- paused). Fall back to the manual estimate rather than a cached
+        -- pre-fight figure, which would be actively misleading during the
+        -- exact moment a big armor buff is up.
+        local haveEstimate, estimate = false, nil
+        if estimateTrusted then
+            haveEstimate, estimate = EstimateArmorReductionPercent(effective, playerLevel)
+        end
+
+        if haveEstimate then
+            lines[#lines + 1] = { left = "Physical damage reduction (estimated)", right = ns.FormatPercent(estimate) }
+            lines[#lines + 1] = { left = "|cff808080Live figure unavailable right now|r", right = "" }
+        elseif GetArmorEffectivenessScale() then
+            lines[#lines + 1] = { left = "|cff808080Damage reduction unavailable right now|r", right = "" }
         end
     end
 

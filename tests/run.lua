@@ -745,10 +745,28 @@ check(secretDump:find("Physical damage reduction") ~= nil, "the reduction line s
 mock.armor.posBuff = 0
 mock.RunTickers()
 
+-- Mirrors the mock's C_PaperDollInfo curve (wow_mock.lua), which in turn
+-- mirrors Blizzard's real published armor formula (Stats.lua's
+-- EstimateArmorConstant) - shared by every expected-reduction helper below.
+local function RealArmorConstant(level)
+    local k = 400 + 85 * level
+    if level > 59 then k = k + 4.5 * (level - 59) end
+    if level > 80 then k = k + 20 * (level - 80) end
+    if level > 85 then k = k + 22 * (level - 85) end
+    return k
+end
+
+-- Real armor mitigation caps at 75% regardless of level, most visible at
+-- low target levels where the constant above is small.
+local function RealArmorRatio(armor, level)
+    local ratio = armor / (armor + RealArmorConstant(level))
+    return ratio > 0.75 and 0.75 or ratio
+end
+
 -- Pinned content refreshes on its own so the numbers stay live. Change the
 -- underlying value and the pin must pick it up without being re-opened.
 local function expectedReduction(armor)
-    return string.format("%.2f%%", (armor / (armor + 2500)) * 100)
+    return string.format("%.2f%%", RealArmorRatio(armor, 80) * 100)
 end
 
 check(dumpOf(pinned):find("Effective=4500") ~= nil, "pinned tooltip starts with the current armor")
@@ -765,7 +783,7 @@ mock.armor.effective = 4500
 -- Once the player has a hostile target, the reduction figure comes from
 -- GetArmorEffectivenessAgainstTarget instead of the same-level estimate.
 local function expectedTargetReduction(armor)
-    return string.format("%.2f%%", (armor / (armor + 1500)) * 100)
+    return string.format("%.2f%%", RealArmorRatio(armor, 1) * 100)
 end
 
 mock.target = { exists = true, hostile = true }
@@ -782,6 +800,57 @@ check(dumpOf(pinned):find("Physical damage reduction=" .. expectedReduction(4500
     dumpOf(pinned))
 
 mock.target = { exists = false, hostile = false }
+mock.RunTickers()
+
+--------------------------------------------------------------------------------
+-- Armor reduction manual estimate
+--
+-- The screenshot behind this bug showed Base/Effective rendering fine but no
+-- reduction line at all: the live curve call failed (an unreadable
+-- effective-armor value, in real play) and previously that just meant no
+-- line. A manual estimate should fill in instead, clearly labelled so it is
+-- never mistaken for the real number.
+--------------------------------------------------------------------------------
+
+local function expectedEstimate(armor, level)
+    return string.format("%.2f%%", RealArmorRatio(armor, level) * 100)
+end
+
+local realGetArmorEffectiveness = C_PaperDollInfo.GetArmorEffectiveness
+C_PaperDollInfo.GetArmorEffectiveness = function() error("blocked, exactly like a secret effective-armor value would be") end
+mock.RunTickers()
+
+local blockedDump = dumpOf(pinned)
+check(blockedDump:find("Base=", 1, true) ~= nil,
+    "base and effective still show when the live reduction call fails", blockedDump)
+check(blockedDump:find("Physical damage reduction (estimated)=" .. expectedEstimate(4500, 80), 1, true) ~= nil,
+    "a manual estimate fills in, clearly labelled, once the live figure is unreadable", blockedDump)
+check(blockedDump:find("Live figure unavailable right now", 1, true) ~= nil,
+    "the estimate explains it is not the live number", blockedDump)
+
+C_PaperDollInfo.GetArmorEffectiveness = realGetArmorEffectiveness
+mock.RunTickers()
+check(dumpOf(pinned):find("Physical damage reduction=" .. expectedReduction(4500), 1, true) ~= nil,
+    "the live figure returns once the API works again", dumpOf(pinned))
+
+-- The estimate must not be trusted forever: if it ever disagrees with a
+-- live result by more than a point (a future level squish or curve rework
+-- would do exactly this, silently), it has to stop offering itself rather
+-- than keep showing a confidently wrong number.
+C_PaperDollInfo.GetArmorEffectiveness = function() return 0.5 end
+mock.RunTickers()
+check(dumpOf(pinned):find("Physical damage reduction=50.00%", 1, true) ~= nil,
+    "sanity check: the deliberately-wrong mock curve is actually in effect", dumpOf(pinned))
+
+C_PaperDollInfo.GetArmorEffectiveness = function() error("blocked, exactly like a secret effective-armor value would be") end
+mock.RunTickers()
+local mismatchedDump = dumpOf(pinned)
+check(mismatchedDump:find("Physical damage reduction (estimated)", 1, true) == nil,
+    "the estimate stops offering itself once it has disagreed with a live result", mismatchedDump)
+check(mismatchedDump:find("Damage reduction unavailable right now", 1, true) ~= nil,
+    "an honest unavailable note takes its place instead", mismatchedDump)
+
+C_PaperDollInfo.GetArmorEffectiveness = realGetArmorEffectiveness
 mock.RunTickers()
 
 -- Hovering an already-pinned row should not double up.

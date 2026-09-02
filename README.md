@@ -95,6 +95,14 @@ rating is buying you; for your primary stat, base versus what gear and buffs add
 for versatility, both the damage done and the damage reduction halves. Proc rows
 show the game's own spell tooltip.
 
+Armor's damage-reduction percentage sometimes can't be read live — a Patch 12.0+
+secret value mid-combat, or an instance that restricts addon reads outright. When
+that happens the tooltip falls back to a manually calculated estimate, clearly
+labelled as such, rather than showing nothing or a stale pre-combat figure. If that
+estimate is ever caught disagreeing with a live reading by more than a point — a
+future level squish or curve rework, say — it stops offering itself for the rest of
+the session and the tooltip says plainly that the figure is unavailable instead.
+
 Rows pass clicks through even while accepting hover, so tooltips do not cost you the
 click-through that makes a locked overlay unobtrusive. Turn them off with
 `/up tooltips` if you would rather the overlay ignore the mouse entirely.
@@ -213,7 +221,7 @@ There is a mock of the WoW API so the addon can be loaded and driven outside the
 game. It catches load-order mistakes, nil API calls, and combat-log parsing bugs:
 
 ```sh
-lua5.1 tests/run.lua      # 263 checks
+lua5.1 tests/run.lua      # 270 checks
 ```
 
 Syntax-check everything (WoW runs Lua 5.1):

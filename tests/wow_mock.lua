@@ -303,15 +303,37 @@ function UnitLevel(unit) return unit == "player" and 80 or 1 end
 
 -- Returns a 0-1 ratio, matching the client convention the addon's scale
 -- probe is meant to detect (a probe <= 1 means "multiply by 100 to display").
-C_PaperDollInfo = C_PaperDollInfo or {}
-function C_PaperDollInfo.GetArmorEffectiveness(armor, level)
-    return armor / (armor + 2500)
+--
+-- Mirrors Blizzard's actual published armor-mitigation curve (see
+-- Stats.lua's EstimateArmorConstant) rather than an arbitrary constant, so
+-- the addon's manual estimate agrees with this "live" call by default and a
+-- test can deliberately break that agreement to exercise the distrust path.
+local function ArmorConstant(level)
+    local k = 400 + 85 * level
+    if level > 59 then k = k + 4.5 * (level - 59) end
+    if level > 80 then k = k + 20 * (level - 80) end
+    if level > 85 then k = k + 22 * (level - 85) end
+    return k
 end
 
--- A different constant from GetArmorEffectiveness above so a test can tell
--- which of the two the addon actually used.
+-- Real armor mitigation caps at 75% regardless of level, most visible at
+-- low target levels where the constant above is small.
+local function ArmorRatio(armor, level)
+    local ratio = armor / (armor + ArmorConstant(level))
+    return ratio > 0.75 and 0.75 or ratio
+end
+
+C_PaperDollInfo = C_PaperDollInfo or {}
+function C_PaperDollInfo.GetArmorEffectiveness(armor, level)
+    return ArmorRatio(armor, level)
+end
+
+-- Blizzard's real API takes no level argument here either - it reads the
+-- target's level internally. The mock target is always level 1 (see
+-- UnitLevel above), so this uses that level's constant directly, which
+-- naturally still differs from the same-level curve above (level 80).
 function C_PaperDollInfo.GetArmorEffectivenessAgainstTarget(armor)
-    return armor / (armor + 1500)
+    return ArmorRatio(armor, 1)
 end
 
 mock.target = { exists = false, hostile = false }
