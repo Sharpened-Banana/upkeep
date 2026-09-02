@@ -101,6 +101,47 @@ mock.Fire("PLAYER_LOGIN")
 check(ns.playerGUID == "Player-1234-ABCDEF", "player GUID cached on login")
 
 --------------------------------------------------------------------------------
+section("Number formatting under secret values")
+--------------------------------------------------------------------------------
+
+-- Some unit stats become secret while in combat (Patch 12.0+); comparing one
+-- throws even though formatting it does not. A real secret value cannot be
+-- constructed in plain Lua, but a string reproduces the same shape: Lua's
+-- relational operators never coerce across types (a string compared to a
+-- number always throws, regardless of content), while string.format's %d
+-- and %f happily coerce a numeric string - so "42" throws exactly where a
+-- secret would, and formats exactly where a secret would too.
+check(ns.FormatNumber("42") == "42",
+    "FormatNumber falls back to a plain render when comparison isn't possible", ns.FormatNumber("42"))
+check(ns.FormatPercent("42") == "42.00%",
+    "FormatPercent falls back the same way", ns.FormatPercent("42"))
+check(ns.FormatTime("42") == "42.0s",
+    "FormatTime falls back the same way", ns.FormatTime("42"))
+
+-- A value that cannot even be formatted (not just compared) still never
+-- throws - it just degrades further instead of taking the row down.
+check(ns.FormatNumber({}) == "?", "an unformattable value degrades to a placeholder rather than erroring")
+check(ns.FormatPercent({}) == "?%", "same for FormatPercent")
+check(ns.FormatTime({}) == "?", "same for FormatTime")
+
+-- The ordinary case is unaffected by any of the above.
+check(ns.FormatNumber(12345) == "12.3K", "normal numbers still format normally", ns.FormatNumber(12345))
+
+-- ns.SafeCall/ns.KnownPast are the shared way modules guard a comparison or
+-- arithmetic expression against the same risk, rather than each reinventing
+-- its own pcall wrapper.
+check(ns.SafeCall(function() return 1 + 1 end) == 2, "SafeCall returns a normal result unchanged")
+check(ns.SafeCall(function() return "x" >= 1 end) == nil,
+    "SafeCall swallows a throw and returns nil instead of propagating it")
+
+check(ns.KnownPast(5, 0, true) == true, "KnownPast reports a real value correctly (greater)")
+check(ns.KnownPast(-5, 0, false) == true, "KnownPast reports a real value correctly (less)")
+check(ns.KnownPast(5, 10, true) == false, "KnownPast reports false when the value isn't past the threshold")
+check(ns.KnownPast(nil, 0, true) == false, "KnownPast treats a missing value as 0, not an error")
+check(ns.KnownPast("50", 0, true) == false,
+    "KnownPast reports false, not an error, when the value can't be compared at all")
+
+--------------------------------------------------------------------------------
 section("Stats module")
 --------------------------------------------------------------------------------
 
@@ -689,6 +730,20 @@ dump = dumpOf(pinned)
 check(dump:find("Armor=") ~= nil, "pinned tooltip shows the stat", dump)
 check(dump:find("physical damage") ~= nil, "pinned tooltip keeps the explanation", dump)
 check(dump:find("Click to keep this on screen") == nil, "pinned tooltip drops the pin hint", dump)
+
+-- Armor can become secret while in combat (Patch 12.0+); an uncomparable
+-- posBuff must only cost the optional "From buffs" line, not the rest of
+-- the tooltip - this is the exact shape of a real reported bug where the
+-- whole armor tooltip went blank in combat.
+mock.armor.posBuff = "50" -- throws on comparison, exactly like a secret value would
+mock.RunTickers()
+local secretDump = dumpOf(pinned)
+check(secretDump:find("Base=") ~= nil,
+    "an uncomparable posBuff does not take down the rest of the armor tooltip", secretDump)
+check(secretDump:find("Effective=") ~= nil, "effective armor still shows too", secretDump)
+check(secretDump:find("Physical damage reduction") ~= nil, "the reduction line still shows too", secretDump)
+mock.armor.posBuff = 0
+mock.RunTickers()
 
 -- Pinned content refreshes on its own so the numbers stay live. Change the
 -- underlying value and the pin must pick it up without being re-opened.

@@ -34,7 +34,10 @@ local function GetSpellIcon(spellID)
     return select(3, GetSpellInfo(spellID))
 end
 
--- Returns remaining cooldown in seconds, or 0 when ready.
+-- Returns remaining cooldown in seconds, or 0 when ready. A secret cooldown
+-- reading (see Core/Init.lua for why one might be) also reads as ready:
+-- better to underreport a state we can't inspect than to throw and cost the
+-- whole row.
 local function GetCooldownRemaining(spellID)
     local start, duration
     if C_Spell and C_Spell.GetSpellCooldown then
@@ -45,13 +48,15 @@ local function GetCooldownRemaining(spellID)
         start, duration = GetSpellCooldown(spellID)
     end
 
-    if not start or not duration or duration <= 0 then return 0 end
+    return ns.SafeCall(function()
+        if not start or not duration or duration <= 0 then return 0 end
 
-    -- The 1.5s global cooldown is not worth reporting as "on cooldown".
-    if duration <= 1.5 then return 0 end
+        -- The 1.5s global cooldown is not worth reporting as "on cooldown".
+        if duration <= 1.5 then return 0 end
 
-    local remaining = start + duration - GetTime()
-    return remaining > 0 and remaining or 0
+        local remaining = start + duration - GetTime()
+        return remaining > 0 and remaining or 0
+    end) or 0
 end
 
 -- This module updates on a 0.1s ticker and on every UNIT_AURA, so a refusal
@@ -152,14 +157,14 @@ local function BuildWatchedRow(spellID)
     local aura = GetPlayerAura(spellID)
 
     if aura then
-        local remaining = (aura.expirationTime or 0) - GetTime()
+        local remaining = ns.SafeCall(function() return (aura.expirationTime or 0) - GetTime() end)
         local label = name
-        if (aura.applications or 0) > 1 then
+        if ns.KnownPast(aura.applications, 1, true) then
             label = format("%s (%d)", name, aura.applications)
         end
         return {
             label = label,
-            value = (aura.duration or 0) > 0 and ns.FormatTime(remaining) or "on",
+            value = ns.KnownPast(aura.duration, 0, true) and ns.FormatTime(remaining) or "on",
             icon = icon,
             valueColor = COLOR_ACTIVE,
             tooltipKey = spellID,
@@ -204,8 +209,11 @@ function Procs:Update()
 
     for _, spellID in ipairs(ns.chardb.watch) do
         watchedSet[spellID] = true
-        local row = BuildWatchedRow(spellID)
-        if row then
+        -- One watched spell's row failing to build (an unexpected secret
+        -- value, say) must not cost every other row - this loop has no
+        -- outer pcall of its own the way Stats.lua's per-reader calls do.
+        local ok, row = pcall(BuildWatchedRow, spellID)
+        if ok and row then
             rows[#rows + 1] = row
         end
     end
@@ -215,9 +223,9 @@ function Procs:Update()
         local limit = math.min(#auto, db.procs.maxAuto)
         for index = 1, limit do
             local proc = auto[index]
-            local remaining = proc.expirationTime - GetTime()
+            local remaining = ns.SafeCall(function() return proc.expirationTime - GetTime() end)
             local label = proc.name
-            if proc.count > 1 then
+            if ns.KnownPast(proc.count, 1, true) then
                 label = format("%s (%d)", proc.name, proc.count)
             end
             rows[#rows + 1] = {

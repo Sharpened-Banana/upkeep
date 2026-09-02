@@ -269,10 +269,10 @@ local function StatBreakdown(index)
     local lines = {
         { left = "Base", right = ns.FormatNumber(base) },
     }
-    if (posBuff or 0) > 0 then
+    if ns.KnownPast(posBuff, 0, true) then
         lines[#lines + 1] = { left = "From gear and buffs", right = "+" .. ns.FormatNumber(posBuff) }
     end
-    if (negBuff or 0) < 0 then
+    if ns.KnownPast(negBuff, 0, false) then
         lines[#lines + 1] = { left = "Reduced by", right = ns.FormatNumber(negBuff) }
     end
     return lines, total
@@ -373,7 +373,7 @@ tooltipBuilders.armor = function()
         { left = "Base", right = ns.FormatNumber(base) },
         { left = "Effective", right = ns.FormatNumber(effective) },
     }
-    if (posBuff or 0) > 0 then
+    if ns.KnownPast(posBuff, 0, true) then
         lines[#lines + 1] = { left = "From buffs", right = "+" .. ns.FormatNumber(posBuff) }
     end
 

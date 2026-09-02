@@ -106,10 +106,51 @@ function ns.AurasBlocked()
 end
 
 --------------------------------------------------------------------------------
--- Number / text helpers
+-- Secret-value safety
+--
+-- Some unit stats (and, per Blizzard's own docs, some aura and cooldown
+-- data) become secret while the player is in combat - a Patch 12.0+
+-- restriction. Arithmetic and string.format on a secret are fine; comparing
+-- one, or even just testing it for truthiness with `or`, throws. A single
+-- unguarded `if (value or 0) > 0` deep inside a tooltip builder or row
+-- renderer is enough to take the whole thing down, not just that one line -
+-- these two helpers are the shared way every module protects a comparison
+-- rather than each reinventing its own pcall wrapper.
 --------------------------------------------------------------------------------
 
-function ns.FormatNumber(value)
+-- Runs an expression that might touch a secret value, returning nil rather
+-- than letting it throw. For a value that only needs to be *shown*, not
+-- branched on, format it directly instead - that already works on a secret.
+function ns.SafeCall(fn)
+    local ok, result = pcall(fn)
+    if ok then return result end
+    return nil
+end
+
+-- True only when value is known to be past threshold in the given
+-- direction (wantGreater true for >, false for <). A secret value cannot be
+-- compared at all, so this reports false rather than letting the comparison
+-- throw: an optional bonus line quietly not appearing is fine, the whole
+-- tooltip or row disappearing is not.
+function ns.KnownPast(value, threshold, wantGreater)
+    return ns.SafeCall(function()
+        local number = value or 0
+        if wantGreater then return number > threshold end
+        return number < threshold
+    end) == true
+end
+
+--------------------------------------------------------------------------------
+-- Number / text helpers
+--
+-- Every stat row funnels through these three formatters, so the same
+-- secret-value risk above applies here too - a raw `>=` or `value or 0` was
+-- enough to silently drop rows. Each formatter tries its normal logic first
+-- and only falls back if that throws, so the common case (a plain number)
+-- is unaffected.
+--------------------------------------------------------------------------------
+
+local function FormatNumberUnsafe(value)
     value = value or 0
     if value >= 1e9 then
         return format("%.2fB", value / 1e9)
@@ -121,16 +162,41 @@ function ns.FormatNumber(value)
     return format("%d", value)
 end
 
-function ns.FormatPercent(value)
-    return format("%.2f%%", value or 0)
+function ns.FormatNumber(value)
+    local ok, result = pcall(FormatNumberUnsafe, value)
+    if ok then return result end
+
+    -- The comparisons above couldn't run; formatting alone still can, so
+    -- fall back to the plainest rendering rather than losing the row.
+    local plainOk, plain = pcall(format, "%d", value)
+    if plainOk then return plain end
+    return "?"
 end
 
-function ns.FormatTime(seconds)
+function ns.FormatPercent(value)
+    local ok, result = pcall(function() return format("%.2f%%", value or 0) end)
+    if ok then return result end
+
+    local plainOk, plain = pcall(format, "%.2f%%", value)
+    if plainOk then return plain end
+    return "?%"
+end
+
+local function FormatTimeUnsafe(seconds)
     seconds = seconds or 0
     if seconds >= 60 then
         return format("%d:%02d", seconds / 60, seconds % 60)
     end
     return format("%.1fs", seconds)
+end
+
+function ns.FormatTime(seconds)
+    local ok, result = pcall(FormatTimeUnsafe, seconds)
+    if ok then return result end
+
+    local plainOk, plain = pcall(format, "%.1fs", seconds)
+    if plainOk then return plain end
+    return "?"
 end
 
 --------------------------------------------------------------------------------
