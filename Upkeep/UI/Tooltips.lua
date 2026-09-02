@@ -80,7 +80,7 @@ end
 --------------------------------------------------------------------------------
 
 local function CreateHoverFrame()
-    local frame = CreateFrame("GameTooltip", "StatOverlayHoverTooltip", UIParent, "GameTooltipTemplate")
+    local frame = CreateFrame("GameTooltip", "UpkeepHoverTooltip", UIParent, "GameTooltipTemplate")
     frame:SetClampedToScreen(true)
 
     -- Mouse-enabled so the player can move into it and click to pin.
@@ -164,7 +164,7 @@ local function SavePinPosition(pin)
 end
 
 local function CreatePinFrame(index)
-    local frame = CreateFrame("GameTooltip", "StatOverlayPinnedTooltip" .. index, UIParent, "GameTooltipTemplate")
+    local frame = CreateFrame("GameTooltip", "UpkeepPinnedTooltip" .. index, UIParent, "GameTooltipTemplate")
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     frame:SetMovable(true)
@@ -366,10 +366,10 @@ end
 -- Key binding
 --------------------------------------------------------------------------------
 
-BINDING_HEADER_STATOVERLAY = "StatOverlay"
-BINDING_NAME_STATOVERLAY_PIN_TOOLTIP = "Pin hovered tooltip"
+BINDING_HEADER_UPKEEP = "Upkeep"
+BINDING_NAME_UPKEEP_PIN_TOOLTIP = "Pin hovered tooltip"
 
-function StatOverlay_PinHoveredTooltip()
+function Upkeep_PinHoveredTooltip()
     local ok, result = ns.Tooltips:PinHovered()
     if not ok then
         ns.Print(result or "nothing to pin.")

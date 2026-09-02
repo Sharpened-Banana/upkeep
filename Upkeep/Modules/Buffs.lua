@@ -74,7 +74,7 @@ local function MatchSelfBuffs()
     return matched
 end
 
-local COLOR_MISSING = { 1, 0.4, 0.4 }
+local COLOR_MISSING = ns.Colors.bad
 
 function Buffs:Update()
     local db = ns.db.buffs

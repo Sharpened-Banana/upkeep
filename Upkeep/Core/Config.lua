@@ -31,6 +31,9 @@ local DEFAULTS = {
     hideOutOfCombat = false,
     tooltips = true,
 
+    -- Panel border/background preset; see Core/Theme.lua for the registry.
+    theme = "minimal",
+
     -- Pinned tooltips, keyed by "section:key", each { section, key, custom,
     -- point, relPoint, x, y }. Only dragged pins carry a position; the rest
     -- stack down the side of the overlay.
@@ -38,7 +41,7 @@ local DEFAULTS = {
 
     position = { point = "CENTER", relPoint = "CENTER", x = 300, y = 0 },
 
-    -- Which stats are shown lives per character, in StatOverlayCharDB.
+    -- Which stats are shown lives per character, in UpkeepCharDB.
     stats = {
         enabled = true,
     },
@@ -67,6 +70,10 @@ local DEFAULTS = {
         -- Off by default: relevant to everyone, but noisy while just
         -- questing around with no flask or food up.
         showSelfBuffs = false,
+    },
+
+    characterPanel = {
+        enabled = true,
     },
 }
 
@@ -135,10 +142,10 @@ local function MigrateStatVisibility(db, chardb)
 end
 
 function ns.InitConfig()
-    StatOverlayDB = CopyDefaults(StatOverlayDB or {}, DEFAULTS)
-    StatOverlayCharDB = CopyDefaults(StatOverlayCharDB or {}, CHAR_DEFAULTS)
-    ns.db = StatOverlayDB
-    ns.chardb = StatOverlayCharDB
+    UpkeepDB = CopyDefaults(UpkeepDB or {}, DEFAULTS)
+    UpkeepCharDB = CopyDefaults(UpkeepCharDB or {}, CHAR_DEFAULTS)
+    ns.db = UpkeepDB
+    ns.chardb = UpkeepCharDB
 
     MigrateStatVisibility(ns.db, ns.chardb)
 end
@@ -157,8 +164,8 @@ function ns.ResetConfig()
         ns.Tooltips:UnpinAll()
     end
 
-    StatOverlayDB = CopyDefaults({}, DEFAULTS)
-    ns.db = StatOverlayDB
+    UpkeepDB = CopyDefaults({}, DEFAULTS)
+    ns.db = UpkeepDB
 
     ns.chardb.statsShow = CopyDefaults({}, CHAR_DEFAULTS.statsShow)
 

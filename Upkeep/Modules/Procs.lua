@@ -127,9 +127,9 @@ end
 -- Rows
 --------------------------------------------------------------------------------
 
-local COLOR_ACTIVE = { 0.4, 1, 0.4 }
-local COLOR_COOLDOWN = { 1, 0.5, 0.5 }
-local COLOR_READY = { 0.6, 0.6, 0.6 }
+local COLOR_ACTIVE = ns.Colors.good
+local COLOR_COOLDOWN = ns.Colors.warn
+local COLOR_READY = ns.Colors.neutral
 
 -- Proc rows show the game's own spell tooltip on hover.
 local function TooltipProvider(spellID)
@@ -274,7 +274,7 @@ function Procs:ListWatched()
 end
 
 -- Dumps current player buffs so the player can find the spell ID to watch.
--- Returns the list plus a `blocked` flag, so /so scan can say "this content
+-- Returns the list plus a `blocked` flag, so /up scan can say "this content
 -- hides auras" instead of the misleading "no buffs on you right now".
 function Procs:ScanAuras()
     local results = {}

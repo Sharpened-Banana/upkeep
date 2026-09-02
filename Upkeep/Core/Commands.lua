@@ -1,31 +1,31 @@
 -- Core/Commands.lua
--- Slash command interface: /so and /statoverlay.
+-- Slash command interface: /up and /upkeep.
 
 local ADDON, ns = ...
 
 local Commands = ns:NewModule("Commands")
 
 local HELP = {
-    "|cff33ff99StatOverlay|r commands:",
-    "  |cffffff00/so|r - toggle the overlay",
-    "  |cffffff00/so lock|r / |cffffff00unlock|r - lock or unlock dragging",
-    "  |cffffff00/so config|r - open the options panel",
-    "  |cffffff00/so scale <0.5-2>|r - set overlay scale",
-    "  |cffffff00/so width <120-320>|r - set overlay width",
-    "  |cffffff00/so font <8-20>|r - set font size",
-    "  |cffffff00/so stat <name>|r - toggle a stat row for this character",
-    "  |cffffff00/so tooltips|r - toggle hover tooltips",
-    "  |cffffff00/so pin [stat]|r - keep a tooltip on screen (hovered one if no stat given)",
-    "  |cffffff00/so unpin [stat|all]|r - close pinned tooltips",
-    "  |cffffff00/so pins|r - list what is pinned",
-    "  |cffffff00/so dps|r - report the last fight",
-    "  |cffffff00/so reset dps|r - clear combat totals",
-    "  |cffffff00/so reset pos|r - move the overlay back to centre",
-    "  |cffffff00/so reset all|r - restore every setting to default",
-    "  |cffffff00/so watch <spellID>|r - track a spell's proc and cooldown",
-    "  |cffffff00/so unwatch <spellID>|r - stop tracking a spell",
-    "  |cffffff00/so watch list|r - show tracked spells",
-    "  |cffffff00/so scan|r - list your current buffs with their spell IDs",
+    "|cff33ff99Upkeep|r commands:",
+    "  |cffffff00/up|r - toggle the overlay",
+    "  |cffffff00/up lock|r / |cffffff00unlock|r - lock or unlock dragging",
+    "  |cffffff00/up config|r - open the options panel",
+    "  |cffffff00/up scale <0.5-2>|r - set overlay scale",
+    "  |cffffff00/up width <120-320>|r - set overlay width",
+    "  |cffffff00/up font <8-20>|r - set font size",
+    "  |cffffff00/up stat <name>|r - toggle a stat row for this character",
+    "  |cffffff00/up tooltips|r - toggle hover tooltips",
+    "  |cffffff00/up pin [stat]|r - keep a tooltip on screen (hovered one if no stat given)",
+    "  |cffffff00/up unpin [stat|all]|r - close pinned tooltips",
+    "  |cffffff00/up pins|r - list what is pinned",
+    "  |cffffff00/up dps|r - report the last fight",
+    "  |cffffff00/up reset dps|r - clear combat totals",
+    "  |cffffff00/up reset pos|r - move the overlay back to centre",
+    "  |cffffff00/up reset all|r - restore every setting to default",
+    "  |cffffff00/up watch <spellID>|r - track a spell's proc and cooldown",
+    "  |cffffff00/up unwatch <spellID>|r - stop tracking a spell",
+    "  |cffffff00/up watch list|r - show tracked spells",
+    "  |cffffff00/up scan|r - list your current buffs with their spell IDs",
 }
 
 local function PrintLines(lines, emptyMessage)
@@ -69,7 +69,7 @@ end
 handlers.scale = function(argument)
     local value = tonumber(argument)
     if not value or value < 0.5 or value > 2 then
-        ns.Print("usage: /so scale <0.5-2>")
+        ns.Print("usage: /up scale <0.5-2>")
         return
     end
     ns.db.scale = value
@@ -80,7 +80,7 @@ end
 handlers.width = function(argument)
     local value = tonumber(argument)
     if not value or value < 120 or value > 320 then
-        ns.Print("usage: /so width <120-320>")
+        ns.Print("usage: /up width <120-320>")
         return
     end
     ns.db.width = value
@@ -91,7 +91,7 @@ end
 handlers.font = function(argument)
     local value = tonumber(argument)
     if not value or value < 8 or value > 20 then
-        ns.Print("usage: /so font <8-20>")
+        ns.Print("usage: /up font <8-20>")
         return
     end
     ns.db.fontSize = value
@@ -114,7 +114,7 @@ handlers.stat = function(argument)
 
     local key = argument:lower()
     if shown[key] == nil then
-        ns.Print(format("unknown stat '%s'. Use /so stat to list them.", key))
+        ns.Print(format("unknown stat '%s'. Use /up stat to list them.", key))
         return
     end
 
@@ -145,7 +145,7 @@ handlers.pin = function(argument)
         return
     end
 
-    ns.Print(format("unknown stat '%s'. Use /so stat to list them.", key))
+    ns.Print(format("unknown stat '%s'. Use /up stat to list them.", key))
 end
 
 handlers.unpin = function(argument)
@@ -191,7 +191,7 @@ handlers.reset = function(argument)
         ns.ResetConfig()
         ns.Print("all settings restored to defaults.")
     else
-        ns.Print("usage: /so reset <dps|pos|all>")
+        ns.Print("usage: /up reset <dps|pos|all>")
     end
 end
 
@@ -199,13 +199,13 @@ handlers.watch = function(argument)
     local procs = ns:GetModule("Procs")
 
     if not argument or argument == "" or argument:lower() == "list" then
-        PrintLines(procs:ListWatched(), "no spells watched. Use /so watch <spellID>.")
+        PrintLines(procs:ListWatched(), "no spells watched. Use /up watch <spellID>.")
         return
     end
 
     local spellID = tonumber(argument)
     if not spellID then
-        ns.Print("usage: /so watch <spellID> - find IDs with /so scan")
+        ns.Print("usage: /up watch <spellID> - find IDs with /up scan")
         return
     end
 
@@ -220,7 +220,7 @@ end
 handlers.unwatch = function(argument)
     local spellID = tonumber(argument)
     if not spellID then
-        ns.Print("usage: /so unwatch <spellID>")
+        ns.Print("usage: /up unwatch <spellID>")
         return
     end
 
@@ -249,7 +249,7 @@ local function HandleCommand(input)
 
     if input == "" then
         if not ns.UI:Toggle() then
-            ns.Print("overlay hidden. |cffffff00/so|r to show it again.")
+            ns.Print("overlay hidden. |cffffff00/up|r to show it again.")
         end
         return
     end
@@ -265,7 +265,7 @@ local function HandleCommand(input)
 end
 
 function Commands:OnInit()
-    SLASH_STATOVERLAY1 = "/so"
-    SLASH_STATOVERLAY2 = "/statoverlay"
-    SlashCmdList.STATOVERLAY = HandleCommand
+    SLASH_UPKEEP1 = "/up"
+    SLASH_UPKEEP2 = "/upkeep"
+    SlashCmdList.UPKEEP = HandleCommand
 end

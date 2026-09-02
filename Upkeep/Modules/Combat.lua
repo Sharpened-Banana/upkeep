@@ -207,7 +207,7 @@ function Combat:Update()
         rows[#rows + 1] = {
             label = "DPS",
             value = SafeFormatNumber(dps),
-            valueColor = { 1, 0.82, 0 },
+            valueColor = ns.Colors.gold,
         }
     end
 
@@ -215,7 +215,7 @@ function Combat:Update()
         rows[#rows + 1] = {
             label = "HPS",
             value = SafeFormatNumber(hps),
-            valueColor = { 0.4, 1, 0.4 },
+            valueColor = ns.Colors.good,
         }
     end
 
@@ -223,7 +223,7 @@ function Combat:Update()
         rows[#rows + 1] = {
             label = "DTPS",
             value = SafeFormatNumber(taken),
-            valueColor = { 1, 0.4, 0.4 },
+            valueColor = ns.Colors.bad,
         }
     end
 

@@ -1,5 +1,5 @@
 -- tests/wow_mock.lua
--- A minimal stand-in for the parts of the WoW API that StatOverlay touches.
+-- A minimal stand-in for the parts of the WoW API that Upkeep touches.
 --
 -- This is not an emulator. It exists so the addon can be loaded and driven
 -- outside the game, which catches load-order mistakes, nil API calls and bad
@@ -124,7 +124,7 @@ function CreateFrame(frameType, name, parent, template)
     function frame:GetScale() return self.scale or 1 end
     function frame:SetBackdrop(value) self.backdrop = value end
     function frame:SetBackdropColor(r, g, b, a) self.backdropColor = { r, g, b, a } end
-    function frame:SetBackdropBorderColor() end
+    function frame:SetBackdropBorderColor(r, g, b, a) self.backdropBorderColor = { r, g, b, a } end
     function frame:SetFrameStrata() end
     function frame:SetFrameLevel() end
 
@@ -324,6 +324,107 @@ function C_PaperDollInfo.GetStaggerPercentage(unit)
     return mock.stagger.percent, mock.stagger.againstTarget
 end
 function GetAverageItemLevel() return 639.5, 636.2, 0 end
+
+--------------------------------------------------------------------------------
+-- Inventory slots (character panel)
+--------------------------------------------------------------------------------
+
+INVSLOT_HEAD, INVSLOT_NECK, INVSLOT_SHOULDER, INVSLOT_CHEST, INVSLOT_WAIST = 1, 2, 3, 5, 6
+INVSLOT_LEGS, INVSLOT_FEET, INVSLOT_WRIST, INVSLOT_HAND = 7, 8, 9, 10
+INVSLOT_FINGER1, INVSLOT_FINGER2, INVSLOT_TRINKET1, INVSLOT_TRINKET2 = 11, 12, 13, 14
+INVSLOT_BACK, INVSLOT_MAINHAND, INVSLOT_OFFHAND = 15, 16, 17
+
+mock.equipment = {}     -- slot -> item link (nil = empty)
+mock.itemLevels = {}    -- item link -> item level
+mock.enchantTexts = {}  -- item link -> the enchant's descriptive tooltip text
+mock.sockets = {}       -- item link -> { gemName-or-false, ... }, one per socket
+
+-- Builds a fake item link with a real enchant-ID field, so the addon's own
+-- link:match("item:%d+:(%d+)") parsing exercises the real code path rather
+-- than a shortcut. enchantText and sockets are optional and back the
+-- tooltip- and gem-lookup mocks below.
+function mock.Equip(slot, itemID, enchantID, itemLevel, enchantText, sockets)
+    local link = format("item:%d:%d:0:0:0:0:0:0:0:0:0:0:0:0", itemID, enchantID or 0)
+    mock.equipment[slot] = link
+    mock.itemLevels[link] = itemLevel or 300
+    mock.enchantTexts[link] = enchantText
+    mock.sockets[link] = sockets
+    return link
+end
+
+function mock.Unequip(slot)
+    mock.equipment[slot] = nil
+end
+
+function GetInventoryItemLink(unit, slot)
+    if unit ~= "player" then return nil end
+    return mock.equipment[slot]
+end
+
+C_Item = C_Item or {}
+function C_Item.GetDetailedItemLevelInfo(link)
+    local level = mock.itemLevels[link]
+    if not level then return nil end
+    return level, false, level
+end
+
+-- mock.sockets[link] is an array, one entry per socket on the item: a
+-- string names a filled gem, `false` is an empty socket of that name/type.
+-- Using false (never nil) keeps the array hole-free so ipairs sees every
+-- socket, filled or not.
+function C_Item.GetItemGem(link, index)
+    local sockets = mock.sockets[link]
+    local entry = sockets and sockets[index]
+    if type(entry) == "string" then return entry end
+    return nil
+end
+
+-- Real client convention this addon relies on: the enchant line is built
+-- from this format string, so the mock renders it the same way rather than
+-- hardcoding "Enchanted: " directly.
+ENCHANTED_TOOLTIP_LINE = "Enchanted: %s"
+
+-- Gem socket tooltip lines carry this structured line type in the real
+-- client (filled or empty) rather than being distinguishable only by
+-- rendered icon texture - the mock exposes the same marker so the addon's
+-- real detection logic runs, not a shortcut around it.
+Enum = Enum or {}
+Enum.TooltipDataLineType = Enum.TooltipDataLineType or {}
+Enum.TooltipDataLineType.GemSocket = 3
+
+C_TooltipInfo = C_TooltipInfo or {}
+function C_TooltipInfo.GetInventoryItem(unit, slot)
+    if unit ~= "player" then return nil end
+    local link = mock.equipment[slot]
+    if not link then return nil end
+
+    local lines = {}
+    local text = mock.enchantTexts[link]
+    if text then
+        lines[#lines + 1] = { leftText = format(ENCHANTED_TOOLTIP_LINE, text) }
+    end
+
+    local sockets = mock.sockets[link]
+    if sockets then
+        for _, entry in ipairs(sockets) do
+            if type(entry) == "string" then
+                lines[#lines + 1] = { type = Enum.TooltipDataLineType.GemSocket, leftText = entry }
+            else
+                lines[#lines + 1] = { type = Enum.TooltipDataLineType.GemSocket, leftText = "Prismatic Socket" }
+            end
+        end
+    end
+
+    return { lines = lines }
+end
+
+-- Unlike a plain CreateFrame call, these start hidden in the real client
+-- (the character panel is closed until the player presses C) - the mock's
+-- shown-by-default new-frame behavior would otherwise misrepresent that.
+CharacterFrame = CreateFrame("Frame", "CharacterFrame", UIParent)
+CharacterFrame:Hide()
+PaperDollFrame = CreateFrame("Frame", "PaperDollFrame", CharacterFrame)
+PaperDollFrame:Hide()
 function GetCritChance() return 21.34 end
 function GetSpellCritChance(school) return 18 + school end
 function GetRangedCritChance() return 21.34 end
@@ -339,8 +440,28 @@ function GetSpeed() return 0.9 end
 function GetSpecialization() return 2 end
 function GetSpecializationInfo() return 252, "Frost", "desc", 135773, "DAMAGER", 2 end
 
+mock.masterySpells = { 999888 }
+function GetSpecializationMasterySpells() return mock.masterySpells[1], mock.masterySpells[2] end
+
 mock.inGroup = false
 function IsInGroup() return mock.inGroup end
+
+mock.class = "MAGE"
+local CLASS_LOCALIZED_NAMES = { MAGE = "Mage", WARRIOR = "Warrior" }
+function UnitClass(unit)
+    if unit ~= "player" then return "Creature", nil end
+    return CLASS_LOCALIZED_NAMES[mock.class] or mock.class, mock.class
+end
+
+C_ClassColor = {
+    GetClassColor = function(classFilename)
+        local colors = {
+            MAGE = { r = 0.41, g = 0.80, b = 0.94 },
+            WARRIOR = { r = 0.78, g = 0.61, b = 0.43 },
+        }
+        return colors[classFilename]
+    end,
+}
 
 --------------------------------------------------------------------------------
 -- Spells and auras
@@ -371,6 +492,18 @@ C_Spell = {
         end
         return { startTime = cooldown.start, duration = cooldown.duration, isEnabled = true, modRate = 1 }
     end,
+    GetSpellDescription = function(spellID)
+        return mock.spellDescriptions[spellID]
+    end,
+    RequestLoadSpellData = function(spellID)
+        mock.spellDataRequested[spellID] = true
+    end,
+}
+
+mock.spellDataRequested = {}
+
+mock.spellDescriptions = {
+    [999888] = "Increases the damage of your Frostbolt and Frozen Orb.",
 }
 
 -- Some content refuses aura access outright rather than merely hiding
@@ -475,7 +608,7 @@ SlashCmdList = {}
 MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }
 
 local function NewSettingsCategory(name)
-    local category = { name = name, id = name }
+    local category = { name = name, id = name, settingsByVariable = {} }
     function category:GetID() return self.id end
     return category
 end
@@ -492,12 +625,16 @@ Settings = {
     end,
 
     -- Current signature: (category, variable, variableType, name, default, get, set)
-    RegisterProxySetting = function(_, variable, variableType, name, _, get, set)
+    RegisterProxySetting = function(category, variable, variableType, name, _, get, set)
         assert(type(variableType) == "string",
             "RegisterProxySetting called with the legacy signature for " .. tostring(variable))
         assert(type(get) == "function", "missing getter for " .. tostring(variable))
         assert(type(set) == "function", "missing setter for " .. tostring(variable))
-        return { variable = variable, name = name, get = get, set = set }
+        local setting = { variable = variable, name = name, varType = variableType, get = get, set = set }
+        if category and category.settingsByVariable then
+            category.settingsByVariable[variable] = setting
+        end
+        return setting
     end,
 
     CreateCheckbox = function(_, setting) return setting end,
@@ -507,6 +644,22 @@ Settings = {
         function options:SetLabelFormatter(_, formatter) self.formatter = formatter end
         return options
     end,
+    CreateControlTextContainer = function()
+        local container = { data = {} }
+        function container:Add(value, label, tooltip)
+            table.insert(self.data, { value = value, label = label, tooltip = tooltip })
+        end
+        function container:GetData() return self.data end
+        return container
+    end,
+    -- Records what the generator produced, rather than resolving it lazily
+    -- the way the client would, so a test can inspect setting.options
+    -- straight after the panel is built.
+    CreateDropdown = function(_, setting, getOptions, tooltip)
+        setting.options = getOptions and getOptions()
+        setting.tooltip = tooltip
+        return setting
+    end,
     RegisterAddOnCategory = function() end,
     OpenToCategory = function() end,
 }
@@ -515,7 +668,12 @@ function CreateSettingsListSectionHeaderInitializer(text)
     return { kind = "header", text = text }
 end
 
-function CreateSettingsButtonInitializer(name, buttonText, onClick, tooltip)
+-- addSearchTags mirrors the real Blizzard_SettingControls.lua, which asserts
+-- this is not nil - omitting it is a real bug that once took down the whole
+-- options panel (a throw evaluated outside any pcall), so the mock enforces
+-- the same contract rather than silently accepting a missing argument.
+function CreateSettingsButtonInitializer(name, buttonText, onClick, tooltip, addSearchTags)
+    assert(addSearchTags ~= nil, "CreateSettingsButtonInitializer requires addSearchTags")
     return { kind = "button", name = name, text = buttonText, onClick = onClick, tooltip = tooltip }
 end
 

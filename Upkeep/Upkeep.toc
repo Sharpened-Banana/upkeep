@@ -1,0 +1,27 @@
+## Interface: 120100
+## Title: Upkeep
+## Notes: Movable overlay with character stats, live combat metrics, and proc/cooldown tracking.
+## Author: lonezebra
+## Version: 1.0.0
+## SavedVariables: UpkeepDB
+## SavedVariablesPerCharacter: UpkeepCharDB
+## IconTexture: Interface\Icons\INV_Misc_Gear_01
+## Category-enUS: Combat
+
+Core\Init.lua
+Core\Config.lua
+Core\Theme.lua
+UI\Overlay.lua
+UI\Tooltips.lua
+Modules\Stats.lua
+Modules\Combat.lua
+Modules\Procs.lua
+Modules\Buffs.lua
+Modules\CharacterPanel.lua
+Core\Options.lua
+Core\Commands.lua
+
+# Bindings.xml is intentionally not listed here: the client auto-loads any
+# Bindings.xml sitting in the addon's root. Listing it explicitly makes it
+# get parsed a second time through the generic UI-file XML parser, which
+# does not recognize <Binding> and throws "Unrecognized XML: Binding".

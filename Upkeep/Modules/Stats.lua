@@ -9,6 +9,10 @@ local Stats = ns:NewModule("Stats")
 -- still around; prefer the namespaced versions when present.
 local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
 local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
+local GetSpecializationMasterySpells = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationMasterySpells)
+    or GetSpecializationMasterySpells
+local GetSpellDescription = (C_Spell and C_Spell.GetSpellDescription) or GetSpellDescription
+local RequestLoadSpellData = C_Spell and C_Spell.RequestLoadSpellData
 
 local STAT_STRENGTH, STAT_AGILITY, STAT_STAMINA, STAT_INTELLECT = 1, 2, 3, 4
 
@@ -304,12 +308,48 @@ tooltipBuilders.haste = function(primaryStat)
     return { lines = RatingLines(index) }
 end
 
+-- Mastery is the one secondary stat whose effect is entirely spec-specific
+-- ("Frostbolt and Frozen Orb deal more damage", "your shield absorbs more"),
+-- so a single fixed description would either be too vague to mean anything
+-- or wrong for most specs reading it. The spell description already comes
+-- back fully computed with this character's current mastery plugged in, so
+-- it doubles as an explanation and a live value.
+local function GetMasterySpellDescription()
+    if not (GetSpecializationMasterySpells and GetSpecialization and GetSpellDescription) then return nil end
+
+    local spec = GetSpecialization()
+    if not spec then return nil end
+
+    local ok, spell1, spell2 = pcall(GetSpecializationMasterySpells, spec)
+    if not ok then return nil end
+
+    local lines = {}
+    for _, spellID in ipairs({ spell1 or 0, spell2 or 0 }) do
+        if spellID > 0 then
+            local descOk, desc = pcall(GetSpellDescription, spellID)
+            if descOk and desc and desc ~= "" then
+                lines[#lines + 1] = desc
+            elseif RequestLoadSpellData then
+                -- Spell text loads asynchronously; an empty description just
+                -- means it hasn't arrived yet (a documented C_Spell quirk,
+                -- not a real absence). Kick off the load so a later hover -
+                -- there is no event worth waiting on here - gets the real
+                -- text instead of the generic fallback forever.
+                pcall(RequestLoadSpellData, spellID)
+            end
+        end
+    end
+
+    if #lines == 0 then return nil end
+    return table.concat(lines, "\n\n")
+end
+
 tooltipBuilders.mastery = function()
     local lines = RatingLines(RATING.mastery)
     if GetMastery then
         lines[#lines + 1] = { left = "Mastery points", right = format("%.2f", GetMastery() or 0) }
     end
-    return { lines = lines }
+    return { lines = lines, description = GetMasterySpellDescription() }
 end
 
 tooltipBuilders.vers = function()
@@ -403,10 +443,60 @@ local function TooltipProvider(key)
         local ok, built = pcall(builder, primaryStat)
         if ok and built then
             data.lines = built.lines
+            -- A builder can supply a live, spec-specific description (see
+            -- mastery) that's more useful than the fixed one in DESCRIPTIONS;
+            -- falling back to the static text when it can't (e.g. no spec yet).
+            if built.description then
+                data.description = built.description
+            end
         end
     end
 
     return data
+end
+
+--------------------------------------------------------------------------------
+-- Public accessors
+--
+-- For other UI surfaces (the character-panel insights panel) that want the
+-- same rating-and-what-it's-worth breakdown the tooltips already show,
+-- without needing a hover to build it.
+--------------------------------------------------------------------------------
+
+function Stats:GetContextStats()
+    local primaryStat = GetPrimaryStatIndex()
+    local critIndex = (primaryStat == STAT_INTELLECT) and RATING.critSpell or RATING.critMelee
+    local hasteIndex = (primaryStat == STAT_INTELLECT) and RATING.hasteSpell or RATING.hasteMelee
+
+    local rows = {}
+    local function AddRating(label, index, getPercent)
+        local ok, percent = pcall(getPercent)
+        if not ok then return end
+        rows[#rows + 1] = {
+            label = label,
+            value = ns.FormatPercent(percent),
+            detail = ns.FormatNumber(Rating(index)) .. " rating",
+        }
+    end
+
+    AddRating("Crit", critIndex, function() return GetCrit(primaryStat) end)
+    AddRating("Haste", hasteIndex, function() return GetHaste() or 0 end)
+    AddRating("Mastery", RATING.mastery, function() return GetMasteryEffect() or 0 end)
+    AddRating("Versatility", RATING.versDone, GetVersatility)
+
+    local ok, _, effectiveArmor = pcall(UnitArmor, "player")
+    if ok then
+        local reduction = GetArmorReductionAgainstTarget(effectiveArmor) or GetArmorReductionPercent(effectiveArmor)
+        if reduction then
+            rows[#rows + 1] = {
+                label = "Armor",
+                value = ns.FormatPercent(reduction),
+                detail = "physical damage reduction",
+            }
+        end
+    end
+
+    return rows
 end
 
 --------------------------------------------------------------------------------

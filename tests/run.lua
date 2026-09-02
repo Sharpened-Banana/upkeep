@@ -1,5 +1,5 @@
 -- tests/run.lua
--- Loads StatOverlay against the mock API and drives it through a session.
+-- Loads Upkeep against the mock API and drives it through a session.
 --
 -- Run with:  lua5.1 tests/run.lua
 
@@ -34,12 +34,14 @@ end
 local FILES = {
     "Core\\Init.lua",
     "Core\\Config.lua",
+    "Core\\Theme.lua",
     "UI\\Overlay.lua",
     "UI\\Tooltips.lua",
     "Modules\\Stats.lua",
     "Modules\\Combat.lua",
     "Modules\\Procs.lua",
     "Modules\\Buffs.lua",
+    "Modules\\CharacterPanel.lua",
     "Core\\Options.lua",
     "Core\\Commands.lua",
 }
@@ -51,7 +53,7 @@ _G.print = function(...)
     addonOutput[#addonOutput + 1] = table.concat({ mock and "" or "" }, "") .. tostring((select(1, ...)))
 end
 
-local ns = mock.LoadAddon("StatOverlay", FILES, "StatOverlay")
+local ns = mock.LoadAddon("Upkeep", FILES, "Upkeep")
 
 _G.print = realPrint
 
@@ -76,18 +78,18 @@ end
 section("Load and initialisation")
 --------------------------------------------------------------------------------
 
-check(ns.name == "StatOverlay", "namespace carries the addon name")
+check(ns.name == "Upkeep", "namespace carries the addon name")
 check(ns.UI ~= nil, "UI module registered at load time")
 
 mock.Fire("ADDON_LOADED", "SomeOtherAddon")
 check(ns.db == nil, "ignores ADDON_LOADED for other addons")
 
-mock.Fire("ADDON_LOADED", "StatOverlay")
+mock.Fire("ADDON_LOADED", "Upkeep")
 check(ns.db ~= nil, "saved variables initialised")
 check(ns.db.scale == 1.0, "defaults applied", ns.db and ns.db.scale)
 check(ns.chardb ~= nil and type(ns.chardb.watch) == "table", "per-character watch list created")
 check(ns.UI.frame ~= nil, "overlay frame built")
-check(SlashCmdList.STATOVERLAY ~= nil, "slash command registered")
+check(SlashCmdList.UPKEEP ~= nil, "slash command registered")
 
 -- Defaults must not be shared by reference, or one character's settings would
 -- leak into another's.
@@ -248,10 +250,12 @@ C_DamageMeter = {
         mock.damageMeterResetCalled = true
     end,
 }
-Enum = {
-    DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 },
-    DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, Hps = 3, DamageTaken = 7 },
-}
+-- Merged onto the shared Enum table rather than replacing it - a full
+-- reassignment here would silently wipe out any Enum members the mock's
+-- baseline setup (or code loaded after this point) relies on.
+Enum = Enum or {}
+Enum.DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 }
+Enum.DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, Hps = 3, DamageTaken = 7 }
 
 local function SetMeterAmount(sessionType, meterType, amount)
     mock.damageMeterSessions[sessionType .. ":" .. meterType] = {
@@ -265,7 +269,7 @@ local function SetMeterAmount(sessionType, meterType, amount)
 end
 
 local meterRendered = {}
-local ns2 = mock.LoadAddon("StatOverlay", { "Core\\Init.lua", "Modules\\Combat.lua" }, "StatOverlay")
+local ns2 = mock.LoadAddon("Upkeep", { "Core\\Init.lua", "Core\\Theme.lua", "Modules\\Combat.lua" }, "Upkeep")
 check(ns2:GetModule("Combat") ~= nil, "an instance loaded with C_DamageMeter present still builds its Combat module")
 
 ns2.playerGUID = PLAYER
@@ -393,7 +397,7 @@ local blockedRow = findRow("procs", "Combustion")
 check(blockedRow and blockedRow.value == "ready",
     "a refused aura read falls back to ready rather than erroring", blockedRow and blockedRow.value)
 
--- /so scan reports the refusal rather than claiming there are no buffs.
+-- /up scan reports the refusal rather than claiming there are no buffs.
 local scanLines, scanBlocked = Procs:ScanAuras()
 check(#scanLines == 0 and scanBlocked == true, "ScanAuras reports blocked instead of an empty buff list")
 
@@ -475,9 +479,9 @@ ns.StatsShown().armor = false
 ns.RefreshAll()
 
 -- A second character starts from its own defaults, not the first one's choices.
-local firstCharacter = StatOverlayCharDB
+local firstCharacter = UpkeepCharDB
 ns.StatsShown().speed = true
-StatOverlayCharDB = nil
+UpkeepCharDB = nil
 ns.InitConfig()
 check(ns.chardb ~= firstCharacter, "a new character gets a fresh character DB")
 check(ns.chardb.statsShow.speed == false, "second character does not inherit the first character's choices",
@@ -485,8 +489,8 @@ check(ns.chardb.statsShow.speed == false, "second character does not inherit the
 check(firstCharacter.statsShow.speed == true, "first character keeps its own choice")
 
 -- An upgrade from the account-wide layout carries the old choice across once.
-StatOverlayDB.stats.show = { crit = false, armor = true, haste = false }
-StatOverlayCharDB = nil
+UpkeepDB.stats.show = { crit = false, armor = true, haste = false }
+UpkeepCharDB = nil
 ns.InitConfig()
 check(ns.chardb.statsShow.crit == false, "legacy account-wide choice migrated (crit off)", ns.chardb.statsShow.crit)
 check(ns.chardb.statsShow.armor == true, "legacy account-wide choice migrated (armor on)", ns.chardb.statsShow.armor)
@@ -497,8 +501,8 @@ ns.chardb.statsShow.crit = true
 ns.InitConfig()
 check(ns.chardb.statsShow.crit == true, "migration does not re-run over later changes")
 
-StatOverlayDB.stats.show = nil
-StatOverlayCharDB = firstCharacter
+UpkeepDB.stats.show = nil
+UpkeepCharDB = firstCharacter
 ns.InitConfig()
 ns.RefreshAll()
 
@@ -518,7 +522,7 @@ ns.db.tooltips = true
 ns.RefreshAll()
 ns.UI:Relayout()
 
-local hoverTip = StatOverlayHoverTooltip
+local hoverTip = UpkeepHoverTooltip
 check(hoverTip ~= nil, "addon owns a hover tooltip frame rather than reusing GameTooltip")
 
 local function dumpOf(frame)
@@ -559,6 +563,55 @@ versFrame.scripts.OnEnter(versFrame)
 dump = dumpOf(hoverTip)
 check(dump:find("Damage and healing done") ~= nil, "versatility tooltip covers damage done", dump)
 check(dump:find("Damage taken reduced by") ~= nil, "versatility tooltip covers damage reduction", dump)
+
+-- Mastery's description comes from the current spec's actual mastery spell,
+-- not a generic fixed line - it's the one secondary stat whose effect is
+-- entirely spec-specific.
+local masteryFrame = rowFrameFor("mastery")
+masteryFrame.scripts.OnEnter(masteryFrame)
+dump = dumpOf(hoverTip)
+check(dump:find("Increases the damage of your Frostbolt and Frozen Orb.", 1, true) ~= nil,
+    "mastery tooltip describes the current spec's actual mastery effect", dump)
+check(dump:find("Improves a bonus specific to your specialisation.", 1, true) == nil,
+    "the generic mastery description is replaced, not just supplemented", dump)
+
+-- Some specs have two mastery spells; both get described.
+mock.spellDescriptions[999889] = "Your critical strikes heal nearby allies."
+mock.masterySpells = { 999888, 999889 }
+masteryFrame.scripts.OnEnter(masteryFrame)
+dump = dumpOf(hoverTip)
+check(dump:find("Frostbolt and Frozen Orb", 1, true) ~= nil and dump:find("critical strikes heal", 1, true) ~= nil,
+    "both mastery spells are described when a spec has two", dump)
+
+-- No mastery spell data available (e.g. no spec chosen yet) falls back to
+-- the generic description rather than showing nothing.
+mock.masterySpells = {}
+masteryFrame.scripts.OnEnter(masteryFrame)
+dump = dumpOf(hoverTip)
+check(dump:find("Improves a bonus specific to your specialisation.", 1, true) ~= nil,
+    "falls back to the generic description when no mastery spell data is available", dump)
+
+mock.masterySpells = { 999888 }
+masteryFrame.scripts.OnEnter(masteryFrame)
+
+-- Spell text loads asynchronously in the real client: an empty description
+-- just means it has not arrived yet, not that there is none. That must
+-- trigger a load request (so a later hover gets the real text) rather than
+-- being treated as a permanent absence.
+mock.spellDescriptions[999888] = nil
+mock.spellDataRequested[999888] = nil
+masteryFrame.scripts.OnEnter(masteryFrame)
+dump = dumpOf(hoverTip)
+check(dump:find("Improves a bonus specific to your specialisation.", 1, true) ~= nil,
+    "not-yet-loaded spell text falls back to the generic description for now", dump)
+check(mock.spellDataRequested[999888] == true,
+    "an empty description triggers a load request for next time")
+
+mock.spellDescriptions[999888] = "Increases the damage of your Frostbolt and Frozen Orb."
+masteryFrame.scripts.OnEnter(masteryFrame)
+dump = dumpOf(hoverTip)
+check(dump:find("Increases the damage of your Frostbolt and Frozen Orb.", 1, true) ~= nil,
+    "once the spell data loads, a later hover shows the real description", dump)
 
 -- Stagger only carries a second line when the API actually hands one back.
 ns.chardb.statsShow.stagger = true
@@ -630,7 +683,7 @@ hoverTip.scripts.OnMouseDown(hoverTip)
 check(Tooltips:IsPinned("stats", "armor"), "clicking the hover tooltip pins it")
 check(not hoverTip.shown, "hover tooltip closes once pinned")
 
-local pinned = _G.StatOverlayPinnedTooltip1
+local pinned = _G.UpkeepPinnedTooltip1
 check(pinned ~= nil and pinned.shown, "a pinned tooltip frame is shown")
 dump = dumpOf(pinned)
 check(dump:find("Armor=") ~= nil, "pinned tooltip shows the stat", dump)
@@ -726,9 +779,9 @@ local okNone, reasonNone = Tooltips:PinHovered()
 check(not okNone, "pinning with nothing hovered is rejected", reasonNone)
 
 -- The key binding entry point is defined and safe to call.
-check(type(StatOverlay_PinHoveredTooltip) == "function", "binding handler is a global function")
-check(pcall(StatOverlay_PinHoveredTooltip), "binding handler runs without a hovered row")
-check(BINDING_NAME_STATOVERLAY_PIN_TOOLTIP ~= nil, "binding has a display name")
+check(type(Upkeep_PinHoveredTooltip) == "function", "binding handler is a global function")
+check(pcall(Upkeep_PinHoveredTooltip), "binding handler runs without a hovered row")
+check(BINDING_NAME_UPKEEP_PIN_TOOLTIP ~= nil, "binding has a display name")
 
 -- Resetting config must not leave orphaned pins on screen.
 Tooltips:Pin("stats", "armor")
@@ -775,6 +828,57 @@ ns.db.procs.enabled = true
 ns.RefreshAll()
 
 --------------------------------------------------------------------------------
+section("Themes")
+--------------------------------------------------------------------------------
+
+check(ns.Colors ~= nil, "shared color palette exists")
+check(ns.Colors.good[1] < 0.5 and ns.Colors.bad[1] > 0.5,
+    "good/bad status colors are not just green vs. red",
+    table.concat(ns.Colors.good, ",") .. " / " .. table.concat(ns.Colors.bad, ","))
+
+check(#ns.THEME_ORDER == 3, "three built-in themes registered", #ns.THEME_ORDER)
+for _, key in ipairs(ns.THEME_ORDER) do
+    check(ns.THEMES[key] and ns.THEMES[key].label ~= nil, "theme '" .. key .. "' has a display label")
+end
+
+check(ns.db.theme == "minimal", "minimal is the default theme")
+check(frame.backdrop.edgeFile == "Interface\\Buttons\\WHITE8X8", "minimal theme uses a flat hairline border")
+
+-- Switching themes rebuilds the backdrop from the new preset.
+ns.db.theme = "bordered"
+ns.RefreshAll()
+check(frame.backdrop.edgeFile == "Interface\\Tooltips\\UI-Tooltip-Border",
+    "bordered theme swaps in the tooltip border texture", frame.backdrop.edgeFile)
+check(frame.backdrop.edgeSize == 16, "bordered theme uses a wider edge to fit the texture", frame.backdrop.edgeSize)
+
+-- Class-colored reads the player's actual class each time, not a fixed color.
+ns.db.theme = "classcolor"
+mock.class = "MAGE"
+ns.RefreshAll()
+local mageEdge = { unpack(frame.backdropBorderColor) }
+check(mageEdge[3] and mageEdge[3] > 0.8, "class-colored border reflects the Mage class color (blue)", table.concat(mageEdge, ","))
+
+mock.class = "WARRIOR"
+ns.RefreshAll()
+local warriorEdge = { unpack(frame.backdropBorderColor) }
+check(warriorEdge[1] ~= mageEdge[1] or warriorEdge[3] ~= mageEdge[3],
+    "class-colored border changes when the player's class does",
+    table.concat(mageEdge, ",") .. " -> " .. table.concat(warriorEdge, ","))
+
+-- An unrecognized class (or a client without C_ClassColor) falls back rather
+-- than erroring, and a bad theme key falls back to minimal.
+mock.class = "SOME_FUTURE_HERO_CLASS"
+check(pcall(ns.RefreshAll), "an unrecognized class does not error the class-colored theme")
+
+ns.db.theme = "not-a-real-theme"
+check(pcall(ns.RefreshAll), "an unknown theme key does not error")
+check(frame.backdrop.edgeFile == "Interface\\Buttons\\WHITE8X8", "an unknown theme key falls back to minimal")
+
+ns.db.theme = "minimal"
+mock.class = "MAGE"
+ns.RefreshAll()
+
+--------------------------------------------------------------------------------
 section("Visibility")
 --------------------------------------------------------------------------------
 
@@ -811,7 +915,7 @@ ns.UI:UpdateVisibility()
 section("Slash commands")
 --------------------------------------------------------------------------------
 
-local handler = SlashCmdList.STATOVERLAY
+local handler = SlashCmdList.UPKEEP
 
 local function run(input)
     local silenced = _G.print
@@ -831,7 +935,7 @@ local commands = {
 
 for _, command in ipairs(commands) do
     local success, err = run(command)
-    check(success, "/so " .. (command == "" and "(toggle)" or command), err)
+    check(success, "/up " .. (command == "" and "(toggle)" or command), err)
 end
 
 check(ns.db.scale == 1.5, "scale command applied", ns.db.scale)
@@ -847,12 +951,137 @@ run("reset all")
 check(ns.db.scale == 1.0, "reset all restores defaults", ns.db.scale)
 
 --------------------------------------------------------------------------------
+section("Character panel")
+--------------------------------------------------------------------------------
+
+local charFrame = _G.UpkeepCharacterPanel
+check(charFrame ~= nil, "character panel frame is created")
+check(not charFrame:IsShown(), "character panel starts hidden")
+
+local function DumpCharPanel()
+    local out = {}
+    for _, line in ipairs(charFrame.lines) do
+        if line.left:IsShown() then
+            out[#out + 1] = (line.left:GetText() or "") .. "=" .. (line.right:GetText() or "")
+        end
+    end
+    return table.concat(out, " | ")
+end
+
+-- The mock, like everywhere else in this file, only fires a script when
+-- told to - Show()/Hide() alone do not trigger OnShow/OnHide. The addon's
+-- own OnConfigChanged checks PaperDollFrame:IsShown() directly (not just
+-- reacting to the event), so the state and the script both have to change
+-- together to accurately stand in for the real client opening the tab.
+local function OpenPaperDoll()
+    PaperDollFrame:Show()
+    PaperDollFrame.scripts.OnShow(PaperDollFrame)
+end
+
+local function ClosePaperDoll()
+    PaperDollFrame:Hide()
+    PaperDollFrame.scripts.OnHide(PaperDollFrame)
+end
+
+-- Head and Chest are enchanted (with real descriptive text); Shoulder,
+-- Feet, and Ring 2 are not. Off Hand is left empty (a two-handed weapon
+-- equipped) and must be skipped rather than flagged. Waist and Neck are
+-- equipped but cannot be enchanted this expansion, so they should never
+-- appear in the enchant list at all. Ring 1 and Main Hand carry gems.
+local LONG_ENCHANT_TEXT = "Increases your maximum health by a very large amount indeed"
+mock.Equip(INVSLOT_HEAD, 1001, 500, 636, "+50 Versatility")
+mock.Equip(INVSLOT_SHOULDER, 1002, 0, 620)
+mock.Equip(INVSLOT_CHEST, 1003, 700, 639, LONG_ENCHANT_TEXT)
+mock.Equip(INVSLOT_FEET, 1004, 0, 610)
+mock.Equip(INVSLOT_FINGER1, 1005, 300, 630, nil, { "Deadly Amber", false })
+mock.Equip(INVSLOT_FINGER2, 1006, 0, 623)
+mock.Equip(INVSLOT_MAINHAND, 1007, 900, 645, nil, { "Quick Ruby", "Solid Sapphire" })
+mock.Unequip(INVSLOT_OFFHAND)
+mock.Equip(INVSLOT_NECK, 1008, 0, 636)
+mock.Equip(INVSLOT_WAIST, 1009, 0, 636)
+
+OpenPaperDoll()
+check(charFrame:IsShown(), "showing the character panel tab shows the insights panel")
+
+local charDump = DumpCharPanel()
+check(charDump:find("Equipped=636.2", 1, true) ~= nil, "shows equipped item level", charDump)
+check(charDump:find("Overall=639.5", 1, true) ~= nil, "shows overall item level", charDump)
+check(charDump:find("Lowest slot=Feet (610)", 1, true) ~= nil,
+    "identifies the lowest item level slot", charDump)
+
+check(charDump:find("Head=+50 Versatility", 1, true) ~= nil,
+    "an enchanted slot shows the enchant's actual name/effect text", charDump)
+check(charDump:find("Shoulder=missing", 1, true) ~= nil, "an unenchanted slot reads as missing", charDump)
+check(charDump:find("Ring 2=missing", 1, true) ~= nil, "ring enchant status is checked too", charDump)
+check(charDump:find("Off Hand", 1, true) == nil, "an empty slot is not flagged at all", charDump)
+check(charDump:find("Waist", 1, true) == nil,
+    "a slot that cannot be enchanted this expansion is not listed", charDump)
+
+check(charDump:find(LONG_ENCHANT_TEXT, 1, true) == nil,
+    "a long enchant description is truncated rather than overflowing the panel", charDump)
+check(charDump:find(LONG_ENCHANT_TEXT:sub(1, 15), 1, true) ~= nil,
+    "the truncated text still starts with the real description", charDump)
+
+check(charDump:find("Gems", 1, true) ~= nil, "a Gems section appears when something is socketed", charDump)
+check(charDump:find("Ring 1=Deadly Amber", 1, true) ~= nil, "shows the gem socketed in a ring", charDump)
+check(charDump:find("Ring 1=Prismatic Socket", 1, true) ~= nil,
+    "a second, empty socket on the same item is reported too, not skipped", charDump)
+check(charDump:find("Main Hand=Quick Ruby", 1, true) ~= nil, "shows the first gem socketed in a weapon", charDump)
+check(charDump:find("Main Hand=Solid Sapphire", 1, true) ~= nil, "shows a second gem in the same slot too", charDump)
+
+check(charDump:find("Crit=21.34%", 1, true) ~= nil, "stat context includes crit", charDump)
+check(charDump:find("1009 rating", 1, true) ~= nil, "stat context includes the underlying rating", charDump)
+
+-- Switching tabs (PaperDollFrame hides) takes the panel away with it.
+ClosePaperDoll()
+check(not charFrame:IsShown(), "hiding the character tab hides the insights panel")
+
+-- Turning the feature off must not bring the panel back with the tab.
+OpenPaperDoll()
+ns.db.characterPanel.enabled = false
+ns.RefreshAll()
+check(not charFrame:IsShown(), "disabling the feature hides the panel even while the tab is open")
+
+ns.db.characterPanel.enabled = true
+ns.RefreshAll()
+check(charFrame:IsShown(), "re-enabling the feature shows the panel again while the tab is open")
+
+-- Gear changes refresh the panel live.
+mock.Equip(INVSLOT_SHOULDER, 1002, 450, 620)
+mock.Fire("PLAYER_EQUIPMENT_CHANGED")
+charDump = DumpCharPanel()
+check(charDump:find("Shoulder=enchanted", 1, true) ~= nil,
+    "enchanting a slot updates the panel on the next equipment-changed event", charDump)
+
+ClosePaperDoll()
+
+--------------------------------------------------------------------------------
 section("Options panel")
 --------------------------------------------------------------------------------
 
 local options = ns:GetModule("Options")
 check(options.category ~= nil, "settings category registered")
 check(pcall(ns.OpenOptions), "opening options does not error")
+
+-- The theme dropdown is backed by a number (an index into THEME_ORDER), not
+-- a string: a mismatched setting type is exactly what surfaces later as an
+-- assertion failure inside Blizzard's own control-building code.
+local themeSetting = options.category.settingsByVariable["UP_theme"]
+check(themeSetting ~= nil, "theme dropdown setting is registered")
+check(themeSetting and themeSetting.varType == "number", "theme setting is numeric, not string",
+    themeSetting and themeSetting.varType)
+check(themeSetting and #themeSetting.options == #ns.THEME_ORDER,
+    "theme dropdown offers one option per registered theme")
+check(themeSetting and themeSetting.options[2].label == ns.THEMES[ns.THEME_ORDER[2]].label,
+    "theme dropdown options are labelled from the theme registry")
+
+check(themeSetting.get() == 1, "theme setting reads back the current (default) theme as index 1", themeSetting.get())
+themeSetting.set(2)
+check(ns.db.theme == ns.THEME_ORDER[2], "picking a dropdown option sets the matching theme key", ns.db.theme)
+check(frame.backdrop.edgeFile == ns.THEMES[ns.THEME_ORDER[2]].edgeTexture,
+    "picking a theme from the dropdown actually re-themes the panel", frame.backdrop.edgeFile)
+themeSetting.set(1)
+check(ns.db.theme == "minimal", "resetting the dropdown back to option 1 restores minimal")
 
 --------------------------------------------------------------------------------
 section("Ticker safety")

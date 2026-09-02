@@ -8,7 +8,7 @@ local GetAddOnMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMet
 ns.name = ADDON
 ns.version = GetAddOnMetadata and GetAddOnMetadata(ADDON, "Version") or "1.0.0"
 
-local PREFIX = "|cff33ff99StatOverlay|r: "
+local PREFIX = "|cff33ff99Upkeep|r: "
 
 function ns.Print(...)
     print(PREFIX .. strjoin(" ", tostringall(...)))

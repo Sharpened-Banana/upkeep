@@ -24,19 +24,32 @@ local layoutDirty = false
 -- Frame construction
 --------------------------------------------------------------------------------
 
+-- Rebuilds the backdrop from the chosen theme and applies its colors. Called
+-- on creation and on every config change, since either the theme or the
+-- opacity slider can be what changed.
+local function ApplyTheme(frame, db)
+    local theme = ns.GetTheme(db.theme)
+
+    frame:SetBackdrop({
+        bgFile = theme.bgTexture,
+        edgeFile = theme.edgeTexture,
+        edgeSize = theme.edgeSize,
+    })
+
+    local br, bgc, bb = unpack(theme.bgColor)
+    frame:SetBackdropColor(br, bgc, bb, db.opacity)
+
+    local er, eg, eb, ea = theme.GetEdgeColor()
+    frame:SetBackdropBorderColor(er, eg, eb, ea)
+end
+
 local function CreateOverlayFrame()
-    local frame = CreateFrame("Frame", "StatOverlayFrame", UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", "UpkeepFrame", UIParent, "BackdropTemplate")
     frame:SetSize(190, 100)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(0, 0, 0, 0.75)
-    frame:SetBackdropBorderColor(0, 0, 0, 1)
+    ApplyTheme(frame, ns.db)
 
     frame:SetScript("OnDragStart", function(self)
         if ns.db.locked then return end
@@ -53,7 +66,7 @@ local function CreateOverlayFrame()
     -- Title, shown only while unlocked so the overlay stays clean in combat.
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     title:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
-    title:SetText("StatOverlay |cff888888(drag to move)|r")
+    title:SetText("Upkeep |cff888888(drag to move)|r")
     frame.title = title
 
     return frame
@@ -275,7 +288,7 @@ function UI:UpdateVisibility()
     local frame = self.frame
     if not frame then return end
 
-    -- An explicit /so hide always wins; the combat filter only applies when the
+    -- An explicit /up hide always wins; the combat filter only applies when the
     -- player has not hidden the overlay by hand.
     if ns.db.hidden then
         frame:Hide()
@@ -297,7 +310,7 @@ function UI:OnConfigChanged()
 
     local db = ns.db
     frame:SetScale(db.scale)
-    frame:SetBackdropColor(0, 0, 0, db.opacity)
+    ApplyTheme(frame, db)
     frame:EnableMouse(not db.locked)
     frame.title:SetShown(not db.locked)
 
