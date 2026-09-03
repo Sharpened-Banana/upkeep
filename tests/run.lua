@@ -803,6 +803,43 @@ mock.target = { exists = false, hostile = false }
 mock.RunTickers()
 
 --------------------------------------------------------------------------------
+-- Effective armor sanity floor
+--
+-- Effective armor has been observed reading as an implausible 0 for a
+-- single tooltip build - below base plus a buff independently known to be
+-- positive - then reading correctly again moments later. Blizzard's own
+-- character panel reads this identical field the identical way, so the
+-- addon corrects the number itself rather than displaying or calculating
+-- from one that contradicts its own inputs.
+--------------------------------------------------------------------------------
+
+mock.armor.posBuff = 1500
+mock.armor.effective = 0
+mock.RunTickers()
+local zeroGlitchDump = dumpOf(pinned)
+check(zeroGlitchDump:find("Effective=4500", 1, true) ~= nil,
+    "an implausible zero effective armor is corrected to base plus a known positive buff", zeroGlitchDump)
+mock.armor.posBuff = 0
+mock.armor.effective = 4500
+mock.RunTickers()
+
+-- When the buff amount is also unreadable, the reading can't be corrected -
+-- ValidateEstimate must refuse to compare against it rather than wrongly
+-- disabling the estimate over a glitch instead of an actual formula
+-- problem.
+mock.armor.effective = 0
+mock.RunTickers()
+mock.armor.effective = 4500
+local realGetArmorEffectivenessForGlitchTest = C_PaperDollInfo.GetArmorEffectiveness
+C_PaperDollInfo.GetArmorEffectiveness = function() error("blocked, exactly like a secret effective-armor value would be") end
+mock.RunTickers()
+check(dumpOf(pinned):find("Physical damage reduction (estimated)=" .. expectedReduction(4500), 1, true) ~= nil,
+    "a transient unreadable armor reading does not disable the estimate for later, valid comparisons",
+    dumpOf(pinned))
+C_PaperDollInfo.GetArmorEffectiveness = realGetArmorEffectivenessForGlitchTest
+mock.RunTickers()
+
+--------------------------------------------------------------------------------
 -- Armor reduction manual estimate
 --
 -- The screenshot behind this bug showed Base/Effective rendering fine but no

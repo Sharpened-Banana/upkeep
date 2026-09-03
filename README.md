@@ -221,7 +221,7 @@ There is a mock of the WoW API so the addon can be loaded and driven outside the
 game. It catches load-order mistakes, nil API calls, and combat-log parsing bugs:
 
 ```sh
-lua5.1 tests/run.lua      # 270 checks
+lua5.1 tests/run.lua      # 272 checks
 ```
 
 Syntax-check everything (WoW runs Lua 5.1):

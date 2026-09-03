@@ -151,9 +151,26 @@ readers.speed = function()
     return "Speed", ns.FormatPercent(value)
 end
 
+-- Effective armor has been observed reading as an implausible 0 - below
+-- base plus a buff independently known to be positive - for a single read,
+-- then reading correctly again moments later; Blizzard's own character
+-- panel reads this identical field the identical way, so it is not a
+-- misread on our end, just a transient value neither of us protects
+-- against. Rather than display or calculate from a number that contradicts
+-- its own inputs, fall back to the one figure we can compute ourselves.
+local function SaneEffectiveArmor(base, effective, posBuff)
+    if not ns.KnownPast(posBuff, 0, true) then return effective end
+    local floor = ns.SafeCall(function() return base + posBuff end)
+    if not floor then return effective end
+    if ns.KnownPast(effective, floor, false) then
+        return floor
+    end
+    return effective
+end
+
 readers.armor = function()
-    local _, effectiveArmor = UnitArmor("player")
-    return "Armor", ns.FormatNumber(effectiveArmor)
+    local base, effectiveArmor, _, posBuff = UnitArmor("player")
+    return "Armor", ns.FormatNumber(SaneEffectiveArmor(base, effectiveArmor, posBuff))
 end
 
 -- Brewmaster-specific, but shown the same way every other stat is: opt-in via
@@ -278,6 +295,15 @@ local estimateTrusted = true
 
 local function ValidateEstimate(armor, level, actualPercent)
     if not estimateTrusted then return end
+
+    -- effective armor has been observed reading as an implausible 0 for a
+    -- moment (see SaneEffectiveArmor below) - comparing an estimate against
+    -- a live result computed from a momentarily-bad input would read as the
+    -- FORMULA being wrong and disable it for the rest of the session over
+    -- nothing. Only validate when armor is confirmed to be a real positive
+    -- number.
+    if not ns.KnownPast(armor, 0, true) then return end
+
     local haveEstimate, estimate = EstimateArmorReductionPercent(armor, level)
     if not haveEstimate then return end
 
@@ -429,6 +455,7 @@ tooltipBuilders.speed = function() return { lines = RatingLines(RATING.speed) } 
 
 tooltipBuilders.armor = function()
     local base, effective, _, posBuff = UnitArmor("player")
+    effective = SaneEffectiveArmor(base, effective, posBuff)
     local lines = {
         { left = "Base", right = ns.FormatNumber(base) },
         { left = "Effective", right = ns.FormatNumber(effective) },
@@ -454,14 +481,19 @@ tooltipBuilders.armor = function()
         lines[#lines + 1] = { left = "Physical damage reduction", right = ns.FormatPercent(reduction) }
         lines[#lines + 1] = { left = "|cff808080Against an evenly matched enemy|r", right = "" }
     else
-        -- The live call failed even though the scale probe below proves the
-        -- API exists on this client - almost always because effective armor
-        -- is unreadable right now, either a Patch 12.0 secret value
-        -- mid-combat or this instance restricting addon reads outright (the
-        -- same reason Procs/Buffs may be reporting aura tracking as
-        -- paused). Fall back to the manual estimate rather than a cached
-        -- pre-fight figure, which would be actively misleading during the
-        -- exact moment a big armor buff is up.
+        -- The live call failed - almost always because effective armor is
+        -- unreadable right now, either a Patch 12.0 secret value mid-combat
+        -- or this instance restricting addon reads outright (the same
+        -- reason Procs/Buffs may be reporting aura tracking as paused).
+        -- Fall back to the manual estimate rather than a cached pre-fight
+        -- figure, which would be actively misleading during the exact
+        -- moment a big armor buff is up.
+        --
+        -- The fallback note below is shown unconditionally rather than
+        -- gated on the API "existing" (formerly checked via the scale
+        -- probe): that probe can fail for the exact same live-read reasons
+        -- the two calls above just did, which would otherwise go silent
+        -- here too rather than say anything at all.
         local haveEstimate, estimate = false, nil
         if estimateTrusted then
             haveEstimate, estimate = EstimateArmorReductionPercent(effective, playerLevel)
@@ -470,7 +502,7 @@ tooltipBuilders.armor = function()
         if haveEstimate then
             lines[#lines + 1] = { left = "Physical damage reduction (estimated)", right = ns.FormatPercent(estimate) }
             lines[#lines + 1] = { left = "|cff808080Live figure unavailable right now|r", right = "" }
-        elseif GetArmorEffectivenessScale() then
+        else
             lines[#lines + 1] = { left = "|cff808080Damage reduction unavailable right now|r", right = "" }
         end
     end
@@ -567,8 +599,9 @@ function Stats:GetContextStats()
     AddRating("Mastery", RATING.mastery, function() return GetMasteryEffect() or 0 end)
     AddRating("Versatility", RATING.versDone, GetVersatility)
 
-    local ok, _, effectiveArmor = pcall(UnitArmor, "player")
+    local ok, base, effectiveArmor, _, posBuff = pcall(UnitArmor, "player")
     if ok then
+        effectiveArmor = SaneEffectiveArmor(base, effectiveArmor, posBuff)
         local reduction = GetArmorReductionAgainstTarget(effectiveArmor) or GetArmorReductionPercent(effectiveArmor)
         if reduction then
             rows[#rows + 1] = {
